@@ -55,6 +55,7 @@ fn chart(kind: ChartKind) -> Chart {
         pivot: None,
         colors: Default::default(),
         font: None,
+        font_size: None,
     }
 }
 
@@ -1296,4 +1297,28 @@ fn element_colors_reach_every_element() {
     // Unpicked, the chart keeps its built-in white background.
     let plain = render(&chart(ChartKind::ColumnClustered), &sample(ChartKind::ColumnClustered), 640.0, 400.0, &ApproxMeasure);
     assert!(matches!(plain.first(), Some(Prim::Rect { fill: Some([0xFF, 0xFF, 0xFF, 0xFF]), .. })));
+}
+
+#[test]
+fn a_chart_font_size_scales_every_text_in_proportion() {
+    let size_of = |c: &Chart, s: &str| {
+        render(c, &sample(ChartKind::ColumnClustered), 640.0, 400.0, &ApproxMeasure).iter().find_map(|p| match p {
+            Prim::Text { text, size, .. } if text == s => Some(*size),
+            _ => None,
+        })
+    };
+    let plain = chart(ChartKind::ColumnClustered);
+    let mut big = plain.clone();
+    big.font_size = Some(13.5);
+    assert_eq!(size_of(&plain, "North"), Some(LABEL_SIZE));
+    assert_eq!(size_of(&big, "North"), Some(13.5), "the legend takes the size");
+    let (t0, t1) = (size_of(&plain, "Quarterly Sales").unwrap(), size_of(&big, "Quarterly Sales").unwrap());
+    assert!((t1 / t0 - 1.5).abs() < 1e-4, "the title keeps its proportion: {t0} → {t1}");
+    // Out-of-range and broken sizes are clamped or ignored, never a crash.
+    for s in [0.0, -3.0, 1e9, f32::NAN, f32::INFINITY] {
+        let mut c = plain.clone();
+        c.font_size = Some(s);
+        let legend = size_of(&c, "North").unwrap();
+        assert!((MIN_FONT_SIZE..=MAX_FONT_SIZE).contains(&legend), "{s} → {legend}");
+    }
 }

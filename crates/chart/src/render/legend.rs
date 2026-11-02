@@ -1,8 +1,8 @@
 use super::frame::Bx;
 use super::trend::supports_trendline;
 use super::{
-    Chart, ChartData, ChartKind, Ctx, DOWN, HAlign, LABEL_SIZE, MAX_CATS, MAX_SERIES, MAX_TRENDLINES, Prim, Rgba, SeriesData, TEXT, Theme, UP,
-    VAlign, auto_name, series_color,
+    Chart, ChartData, ChartKind, Ctx, DOWN, HAlign, MAX_CATS, MAX_SERIES, MAX_TRENDLINES, Prim, Rgba, SeriesData, TEXT, Theme, UP, VAlign, auto_name,
+    series_color,
 };
 use gridcraft_model::LegendPos;
 
@@ -98,7 +98,7 @@ pub(super) fn draw_swatch(ctx: &mut Ctx, sw: Swatch, x: f32, yc: f32, s: f32, co
 }
 
 pub(super) fn draw_legend(ctx: &mut Ctx, entries: &[(String, Rgba, Swatch)], pos: LegendPos, area: Bx) -> Bx {
-    let size = LABEL_SIZE;
+    let size = ctx.label_size;
     let row_h = size * 1.6;
     let s = size * 0.8;
     let gap = 4.0;

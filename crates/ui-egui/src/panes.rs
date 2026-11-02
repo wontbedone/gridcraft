@@ -301,6 +301,33 @@ fn format_chart(app: &mut SheetApp, ui: &mut Ui) {
                 }
             }
         });
+        ui.horizontal(|ui| {
+            ui.label("Size");
+            // Applied when the drag or edit ends, as the chart's Size fields are.
+            let draft = egui::Id::unique(("gridcraft.chart_font_size", id));
+            let current = chart.font_size.unwrap_or(gridcraft_chart::LABEL_SIZE);
+            let mut size = ui.data_mut(|d| d.get_temp::<f32>(draft)).unwrap_or(current);
+            let field = ui.add(
+                egui::DragValue::new(&mut size)
+                    .range(gridcraft_chart::MIN_FONT_SIZE..=gridcraft_chart::MAX_FONT_SIZE)
+                    .speed(0.25)
+                    .suffix(" pt")
+                    .max_decimals(1),
+            );
+            if field.drag_stopped() || field.lost_focus() {
+                ui.data_mut(|d| d.remove::<f32>(draft));
+                if size != current && !ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    app.run_or_alert("chart.set", json!({"chart": id, "fontSize": size}));
+                }
+            } else if field.dragged() || field.has_focus() {
+                ui.data_mut(|d| d.insert_temp(draft, size));
+            } else {
+                ui.data_mut(|d| d.remove::<f32>(draft));
+            }
+            if chart.font_size.is_some() && ui.button("Reset").clicked() {
+                app.run_or_alert("chart.set", json!({"chart": id, "fontSize": Json::Null}));
+            }
+        });
     });
     ui.collapsing("Element Colors", |ui| {
         for (key, label) in gridcraft_engine::model::ChartColors::ELEMENTS {

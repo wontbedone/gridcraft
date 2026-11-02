@@ -8,7 +8,7 @@ use gridcraft_core::RangeRef;
 use gridcraft_formula::{Expr, SheetSel};
 use gridcraft_model::{Chart, ChartColors, ChartKind, LegendPos, QuartileMethod, Series, Workbook};
 
-use crate::chart::{Paint, chart_font, font_props, picked, shape_props, text_color, text_props};
+use crate::chart::{Paint, chart_font, chart_font_size, font_props, picked, shape_props, text_color, text_props};
 use crate::drawing::{dml_color, srgb};
 use crate::xml::{El, esc, esc_attr};
 
@@ -154,6 +154,7 @@ pub fn read_chartex(root: &El) -> Option<Chart> {
             gridlines: plot.kids("axis").find_map(|a| picked(a.path(&["majorGridlines", "spPr", "ln", "solidFill"]))),
         },
         font: chart_font(root),
+        font_size: chart_font_size(root),
     })
 }
 
@@ -417,7 +418,7 @@ pub fn write_chartex(wb: &Workbook, si: usize, ch: &Chart, names: &mut Vec<Strin
         "</cx:chart><cx:spPr><a:solidFill>{}</a:solidFill><a:ln w=\"9525\"><a:solidFill>{}</a:solidFill></a:ln></cx:spPr>{}</cx:chartSpace>",
         paint.background.as_deref().unwrap_or("<a:schemeClr val=\"bg1\"/>"),
         paint.border.as_deref().unwrap_or(GREY),
-        font_props("cx", ch.font.as_deref())
+        font_props("cx", ch.font.as_deref(), ch.font_size)
     );
     s
 }

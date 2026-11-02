@@ -648,6 +648,10 @@ pub struct Chart {
     /// Typeface for all of the chart's text; `None` keeps the built-in one.
     #[serde(default)]
     pub font: Option<String>,
+    /// Size (points) of the chart's axis labels, data labels and legend; the title and axis
+    /// titles keep their proportion to it. `None` keeps the built-in sizes.
+    #[serde(default)]
+    pub font_size: Option<f32>,
 }
 
 impl Chart {

@@ -238,17 +238,29 @@ pub(crate) fn chart_font(root: &El) -> Option<String> {
     (!face.is_empty() && !face.starts_with('+')).then(|| face.to_string())
 }
 
-/// The chart space's `txPr` setting every text's typeface; empty without a font.
-pub(crate) fn font_props(ns: &str, font: Option<&str>) -> String {
-    font.map(str::trim)
-        .filter(|f| !f.is_empty())
-        .map(|f| {
-            format!(
-                "<{ns}:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:latin typeface=\"{}\"/></a:defRPr></a:pPr><a:endParaRPr lang=\"en-US\"/></a:p></{ns}:txPr>",
-                esc_attr(f)
-            )
-        })
-        .unwrap_or_default()
+/// A chart space's text size (`defRPr sz`, hundredths of a point), when it is one a chart takes.
+pub(crate) fn chart_font_size(root: &El) -> Option<f32> {
+    let sz = root.path(&["txPr", "p", "pPr", "defRPr"])?.attr("sz")?.trim().parse::<f32>().ok()? / 100.0;
+    (gridcraft_chart_limits::MIN..=gridcraft_chart_limits::MAX).contains(&sz).then_some(sz)
+}
+
+/// The chart space's `txPr` setting every text's typeface and size; empty without either.
+pub(crate) fn font_props(ns: &str, font: Option<&str>, size: Option<f32>) -> String {
+    let font = font.map(str::trim).filter(|f| !f.is_empty());
+    let size = size.filter(|s| s.is_finite()).map(|s| (s.clamp(gridcraft_chart_limits::MIN, gridcraft_chart_limits::MAX) * 100.0).round() as u32);
+    if font.is_none() && size.is_none() {
+        return String::new();
+    }
+    let sz = size.map(|s| format!(" sz=\"{s}\"")).unwrap_or_default();
+    let latin = font.map(|f| format!("<a:latin typeface=\"{}\"/>", esc_attr(f))).unwrap_or_default();
+    format!("<{ns}:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr{sz}>{latin}</a:defRPr></a:pPr><a:endParaRPr lang=\"en-US\"/></a:p></{ns}:txPr>")
+}
+
+/// The font sizes a chart takes (points), as the renderer clamps them. The XLSX crate sits below
+/// the chart crate, so it keeps its own copy.
+mod gridcraft_chart_limits {
+    pub const MIN: f32 = 4.0;
+    pub const MAX: f32 = 72.0;
 }
 
 fn axis_ids(g: &El) -> Vec<String> {
@@ -334,6 +346,7 @@ pub fn read_chart(root: &El) -> Option<Chart> {
             gridlines: val_axes.iter().find_map(|a| picked(a.path(&["majorGridlines", "spPr", "ln", "solidFill"]))),
         },
         font: chart_font(root),
+        font_size: chart_font_size(root),
     })
 }
 
@@ -1060,7 +1073,7 @@ pub fn write_chart(wb: &Workbook, si: usize, ch: &Chart, book_name: &str) -> Str
     }
     s.push_str("<c:plotVisOnly val=\"1\"/><c:dispBlanksAs val=\"gap\"/></c:chart>");
     s.push_str(&sp_pr(paint.background.as_deref(), paint.border.as_deref()));
-    s.push_str(&font_props("c", ch.font.as_deref()));
+    s.push_str(&font_props("c", ch.font.as_deref(), ch.font_size));
     s.push_str("</c:chartSpace>");
     s
 }

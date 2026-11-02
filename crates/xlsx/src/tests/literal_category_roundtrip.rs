@@ -51,6 +51,7 @@ fn literal_category_with_separators_survives_save() {
         pivot: None,
         colors: Default::default(),
         font: None,
+        font_size: None,
     });
     wb.sheets = vec![Arc::new(s)];
     let bytes = write_xlsx(&wb).unwrap();

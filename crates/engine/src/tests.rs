@@ -5398,6 +5398,22 @@ fn chart_set_font_sets_and_clears_the_chart_typeface() {
     }
 }
 
+#[test]
+fn chart_set_font_size_takes_4_to_72_points() {
+    let mut s = s();
+    chart_data(&mut s);
+    s.execute("insert.chart", json!({"range": "A1:C5", "type": "column"})).unwrap();
+    let size = |s: &Session| s.doc().unwrap().wb.active().unwrap().charts[0].font_size;
+    s.execute("chart.set", json!({"fontSize": 12})).unwrap();
+    assert_eq!(size(&s), Some(12.0));
+    for bad in [json!(3.9), json!(72.5), json!("12"), json!(f64::MAX), json!(-1)] {
+        assert!(s.execute("chart.set", json!({"fontSize": bad})).is_err(), "{bad}");
+    }
+    assert_eq!(size(&s), Some(12.0));
+    s.execute("chart.set", json!({"fontSize": null})).unwrap();
+    assert_eq!(size(&s), None);
+}
+
 mod chart_clipboard {
     use super::*;
     use gridcraft_model::{ChartColors, Color};

@@ -34,8 +34,13 @@ pub(crate) const UP: Rgba = [0x3E, 0x9B, 0x5F, 0xFF];
 pub(crate) const DOWN: Rgba = [0xD6, 0x4F, 0x45, 0xFF];
 
 const TITLE_SIZE: f32 = 14.0;
-const LABEL_SIZE: f32 = 9.0;
+/// Axis labels, data labels, legend and data-table text; a chart's font size replaces it, and
+/// the title and axis titles keep their proportion to it.
+pub const LABEL_SIZE: f32 = 9.0;
 const AXIS_TITLE_SIZE: f32 = 10.0;
+/// Range of a chart's font size (points).
+pub const MIN_FONT_SIZE: f32 = 4.0;
+pub const MAX_FONT_SIZE: f32 = 72.0;
 /// Most categories drawn by category-axis charts.
 const MAX_CATS: usize = 20_000;
 /// Lines with more points than this are decimated (min/max per pixel column).
@@ -49,6 +54,10 @@ struct Ctx<'a> {
     out: Vec<Prim>,
     m: &'a dyn Measure,
     c: Pal,
+    /// Text sizes: the chart's own, or the built-in ones.
+    label_size: f32,
+    title_size: f32,
+    axis_title_size: f32,
 }
 
 /// The colours a chart draws its own elements in: the built-in ones, or what the chart's
@@ -161,12 +170,20 @@ pub fn render(chart: &Chart, data: &ChartData, w: f32, h: f32, m: &dyn Measure) 
         return vec![];
     }
     let data = sanitize(data);
-    let mut ctx = Ctx { out: Vec::new(), m, c: Pal::new(&chart.colors) };
+    let k = chart.font_size.filter(|s| s.is_finite()).map_or(1.0, |s| s.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE) / LABEL_SIZE);
+    let mut ctx = Ctx {
+        out: Vec::new(),
+        m,
+        c: Pal::new(&chart.colors),
+        label_size: LABEL_SIZE * k,
+        title_size: TITLE_SIZE * k,
+        axis_title_size: AXIS_TITLE_SIZE * k,
+    };
     ctx.out.push(Prim::Rect { x: 0.0, y: 0.0, w, h, fill: Some(ctx.c.background), stroke: Some((ctx.c.border, 1.0)), radius: 0.0 });
     let pad = (w.min(h) * 0.04).clamp(2.0, 10.0);
     let mut area = Bx { x: pad, y: pad, w: w - 2.0 * pad, h: h - 2.0 * pad };
     if let Some(t) = chart_title(chart, &data) {
-        let size = TITLE_SIZE.min(h * 0.12).max(4.0);
+        let size = ctx.title_size.min(h * 0.12).max(4.0);
         let t = ctx.fit(&t, size, area.w);
         let color = ctx.c.title;
         ctx.text(w / 2.0, area.y, &t, size, color, (HAlign::Center, VAlign::Top));

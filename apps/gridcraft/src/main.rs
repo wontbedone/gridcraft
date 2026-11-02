@@ -385,6 +385,9 @@ fn main() -> eframe::Result<()> {
                 let Some(mut app) = pending.take() else {
                     return Err("the app was already created".into());
                 };
+                // Catalog the installed fonts in the background: the font lists offer them, and
+                // cells and charts set in one are drawn in it once the scan is done.
+                gridcraft_ui_egui::fonts::start_scan();
                 SheetApp::setup_context_for_language(&cc.egui_ctx, app.ui.dark, app.ui.language);
                 if let Some(port) = control_port {
                     match control_server::start(port, control_token.clone(), cc.egui_ctx.clone()) {

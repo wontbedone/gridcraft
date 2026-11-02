@@ -99,7 +99,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Chart Properties",
             ["Chart Design"],
             None,
-            "{chart?: id, type?, subtype?, title?, legend?: none|bottom|top|left|right, dataLabels?, gridlines?, dataTable?: bool, dataTableKeys?: bool, dataTableHorizontalBorder?: bool, dataTableVerticalBorder?: bool, dataTableOutline?: bool (data tables: column/bar/line/area and compatible combo charts), quartiles?: exclusive|inclusive, style?, xTitle?, yTitle?, font?: typeface for all chart text (null: built-in), at?, width?, height?, dx?, dy?}",
+            "{chart?: id, type?, subtype?, title?, legend?: none|bottom|top|left|right, dataLabels?, gridlines?, dataTable?: bool, dataTableKeys?: bool, dataTableHorizontalBorder?: bool, dataTableVerticalBorder?: bool, dataTableOutline?: bool (data tables: column/bar/line/area and compatible combo charts), quartiles?: exclusive|inclusive, style?, xTitle?, yTitle?, font?: typeface for all chart text (null: built-in), fontSize?: 4..72 points for labels and legend, title and axis titles in proportion (null: built-in), at?, width?, height?, dx?, dy?}",
             has_doc,
             chart_set
         ),
@@ -857,6 +857,7 @@ pub fn build_chart(s: &Session, p: &Json) -> Result<(usize, Chart)> {
         pivot: None,
         colors: Default::default(),
         font: None,
+        font_size: None,
     };
     Ok((sheet, chart))
 }
@@ -902,11 +903,22 @@ fn chart_set(s: &mut Session, p: &Json) -> Result<Json> {
         Some(Json::String(f)) if f.chars().count() <= MAX_FONT_NAME => Some(Some(f.trim().to_string()).filter(|f| !f.is_empty())),
         Some(_) => return Err(bad("font", "expected a font name (up to 255 characters) or null")),
     };
+    let font_size = match p.get("fontSize") {
+        None => None,
+        Some(Json::Null) => Some(None),
+        Some(v) => match v.as_f64() {
+            Some(n) if (f64::from(gridcraft_chart::MIN_FONT_SIZE)..=f64::from(gridcraft_chart::MAX_FONT_SIZE)).contains(&n) => Some(Some(n as f32)),
+            _ => return Err(bad("fontSize", "expected a size from 4 to 72 points, or null")),
+        },
+    };
     edit(s, |cx| {
         let sh = cx.sheet_mut(si)?;
         let Some(c) = sh.charts.get_mut(ci) else { return Ok(Json::Null) };
         if let Some(f) = font {
             c.font = f;
+        }
+        if let Some(size) = font_size {
+            c.font_size = size;
         }
         if let Some(t) = str_param(p, "type") {
             c.kind = chart_kind(t, str_param(p, "subtype").unwrap_or(""));

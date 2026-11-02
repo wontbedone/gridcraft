@@ -44,6 +44,7 @@ fn chart(kind: ChartKind, colors: ChartColors) -> Chart {
         pivot: None,
         colors,
         font: None,
+        font_size: None,
     }
 }
 
@@ -115,6 +116,16 @@ fn a_chart_font_survives_save_and_reopen() {
         assert_eq!(back.font.as_deref(), Some("IBM Plex Mono"), "{kind:?}");
         assert_eq!(back.colors.title, Some(Color::Rgb(0x123456)), "{kind:?}: the font leaves colours alone");
         assert_eq!(reopen(chart(kind, ChartColors::default())).font, None, "{kind:?}");
+    }
+    // A size, with or without a typeface.
+    for (font, size) in [(Some("IBM Plex Mono"), Some(12.5)), (None, Some(16.0)), (None, None)] {
+        for kind in [ChartKind::ColumnClustered, ChartKind::Waterfall] {
+            let mut c = chart(kind, ChartColors::default());
+            c.font = font.map(String::from);
+            c.font_size = size;
+            let back = reopen(c);
+            assert_eq!((back.font.as_deref(), back.font_size), (font, size), "{kind:?}");
+        }
     }
     // A name needing escapes comes back as written.
     let mut c = chart(ChartKind::Line, ChartColors::default());

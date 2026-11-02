@@ -558,6 +558,7 @@ fn chartex_parts_as_excel_expects_them() {
         pivot: None,
         colors: Default::default(),
         font: None,
+        font_size: None,
     });
     wb.sheets = vec![std::sync::Arc::new(sheet)];
     let bytes = crate::write_xlsx(&wb).unwrap();

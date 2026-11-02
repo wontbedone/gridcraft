@@ -1,4 +1,4 @@
-use super::{AXIS_TITLE_SIZE, Chart, ChartData, Ctx, DARK_TEXT, Fmt, HAlign, LABEL_SIZE, PI, Prim, Rgba, Scale, VAlign, WHITE};
+use super::{Chart, ChartData, Ctx, DARK_TEXT, Fmt, HAlign, PI, Prim, Rgba, Scale, VAlign, WHITE};
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Bx {
@@ -41,20 +41,20 @@ pub(super) fn chart_title(chart: &Chart, data: &ChartData) -> Option<String> {
 }
 
 pub(super) fn axis_titles(ctx: &mut Ctx, chart: &Chart, mut area: Bx) -> Bx {
-    let lh = AXIS_TITLE_SIZE * 1.4 + 2.0;
+    let lh = ctx.axis_title_size * 1.4 + 2.0;
     if let Some(t) = chart.x_title.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
-        let t = ctx.fit(t, AXIS_TITLE_SIZE, area.w);
-        ctx.text(area.cx(), area.bottom(), &t, AXIS_TITLE_SIZE, ctx.c.axis_titles, (HAlign::Center, VAlign::Bottom));
+        let t = ctx.fit(t, ctx.axis_title_size, area.w);
+        ctx.text(area.cx(), area.bottom(), &t, ctx.axis_title_size, ctx.c.axis_titles, (HAlign::Center, VAlign::Bottom));
         area.h -= lh;
     }
     if let Some(t) = chart.y_title.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
-        let t = ctx.fit(t, AXIS_TITLE_SIZE, area.h);
+        let t = ctx.fit(t, ctx.axis_title_size, area.h);
         if !t.is_empty() {
             ctx.out.push(Prim::Text {
                 x: area.x,
                 y: area.cy(),
                 text: t,
-                size: AXIS_TITLE_SIZE,
+                size: ctx.axis_title_size,
                 color: ctx.c.axis_titles,
                 bold: false,
                 align: HAlign::Center,
@@ -107,7 +107,7 @@ fn plot_area(ctx: &mut Ctx, plot: Bx) {
 }
 
 pub(super) fn frame(ctx: &mut Ctx, area: Bx, cat: CatAxis, y: &ValAxis, y2: Option<&ValAxis>, horizontal: bool, grid: bool) -> Bx {
-    let ls = LABEL_SIZE;
+    let ls = ctx.label_size;
     let lh = ls * 1.4;
     let ylabels = y.labels();
     let stub = match &cat {

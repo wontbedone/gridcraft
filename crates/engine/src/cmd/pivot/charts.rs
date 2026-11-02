@@ -75,6 +75,7 @@ pub(super) fn insert_pivot_chart(s: &mut Session, p: &Json) -> Result<Json> {
         pivot: Some(link),
         colors: Default::default(),
         font: None,
+        font_size: None,
     };
     edit(s, |cx| {
         cx.sheet_mut(si)?.charts.push(chart);
