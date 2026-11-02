@@ -4,8 +4,13 @@ impl SheetApp {
     /// Copy or cut the selected cells to the system clipboard. Engine-only commands keep
     /// their existing internal clipboard behavior and do not write to the host clipboard.
     pub fn copy_to_clipboard(&mut self, ctx: &egui::Context, command: &str) {
-        // Only ask the engine for HTML when the host can publish it.
-        let result = match self.run_command(command, json!({"html": self.services.copy_html.is_some()})) {
+        // A selected chart is what gets copied, not the cells under it.
+        let params = match self.selected_object {
+            Some(o) if o.kind == gridcraft_engine::model::ObjKind::Chart => json!({"chart": o.id}),
+            // Only ask the engine for HTML when the host can publish it.
+            _ => json!({"html": self.services.copy_html.is_some()}),
+        };
+        let result = match self.run_command(command, params) {
             Ok(result) => result,
             Err(e) => return self.alert(e),
         };

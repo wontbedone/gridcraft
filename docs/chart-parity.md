@@ -1,6 +1,6 @@
 # Chart parity
 
-> **Last reviewed:** 2026-10-18 · **Last updated:** 2026-11-02 · **Change:** minor (chart element colours; earlier: charts resize from eight handles; chart data tables, legend keys and borders, native XLSX round-trip and print/PDF; earlier: selected chart source outlines stay beneath floating objects) · **Target:** Microsoft Excel (Microsoft 365), Excel for Mac 16.113.4
+> **Last reviewed:** 2026-10-18 · **Last updated:** 2026-11-02 · **Change:** minor (chart copy/paste and font; earlier: chart element colours; charts resize from eight handles; chart data tables, legend keys and borders, native XLSX round-trip and print/PDF; earlier: selected chart source outlines stay beneath floating objects) · **Target:** Microsoft Excel (Microsoft 365), Excel for Mac 16.113.4
 
 Excel's chart types and chart elements against GridCraft. Part of
 [target-app-parity.md](target-app-parity.md). **Breadth ~50%, ready ~30%, 40–60 h** (estimated).
@@ -38,6 +38,8 @@ Sources: `crates/model/src/features.rs` (`ChartKind`, `Chart`, `Series`), `crate
 | Element | Excel | GridCraft |
 |---|---|---|
 | Move and resize the chart object | yes | yes (eight handles, each moving only its own edges; Format Chart Area Size fields) (#190) |
+| Copy, cut and paste a chart | Cmd+C/X/V and right-click Cut/Copy, onto any sheet or workbook | yes: `edit.copy`/`edit.cut` with `chart`, then `edit.paste` at the active cell; same data references and formatting in its own workbook, the values it showed in another; the system clipboard gets the data as text. Not as a picture, and not linked back to the source book |
+| Chart font | font for all chart text, per-element fonts | one typeface for all text (`chart.set` `font`, Format Chart › Font, any installed font), kept in XLSX as the chart space's `a:latin`; the on-screen chart only (print/PDF and SVG export keep Helvetica); no per-element fonts, sizes or bold |
 | Selected chart source-data outline | visible on uncovered cells, beneath floating objects | painted above cells and below charts, shapes, pictures and slicers; retains pane clipping and right-to-left cell geometry (#2861) |
 | Chart title, axis titles | text, linked to cells, full formatting | text only |
 | Legend | position, overlay, formatting, per-entry delete | position only |
@@ -109,6 +111,7 @@ are (#1686). Such series get no `numCache`/`strCache` on save (#1690).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-11-02 | minor | Charts copy, cut and paste between sheets and workbooks (Cmd+C/X/V, right-click Cut/Copy), keeping data and design; a chart font (any installed typeface, saved in XLSX); the chart right-click menu no longer closes at once after a quick (trackpad) right-click |
 | 2026-11-02 | minor | Chart element colours: `chart.setColors` and Format Chart › Element Colors pick the background, border, plot area, title, axis titles, labels, legend, axis lines and gridlines colours; separators between slices, bars and markers follow the background. Saved in XLSX as plain RGB colours (DrawingML and chartex); Excel's scheme-colour styling still reads as the built-in look |
 | 2026-11-02 | minor | Charts move and resize from eight handles, each moving only its own edges (#190); resizing leaves the work list (1–2 h, within the 40–60 h rounding) |
 | 2026-11-01 | minor | Chart data tables for column, bar, line, area and compatible combo charts: command/UI controls, formatted source values, blanks, grouped category headers, legend keys, independent borders, shared print/PDF rendering and native c:dTable import/export. Dense tables show a space notice; no readiness score change. |

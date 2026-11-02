@@ -155,6 +155,7 @@ pub(super) fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Respo
     {
         app.selected_object = Some(obj);
         app.grid.object_menu = Some((geo.mirror_pos(p), obj.kind.name(), obj.id));
+        app.grid.object_menu_frame = input.ui.ctx().cumulative_frame_nr();
         return;
     }
 

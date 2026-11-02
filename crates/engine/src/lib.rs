@@ -148,6 +148,20 @@ pub struct Clipboard {
     pub trust: Trust,
 }
 
+/// A copied chart: Paste puts a new chart like it on the active sheet.
+#[derive(Clone, Debug)]
+pub struct ChartClip {
+    /// The chart as copied, referring to its workbook's cells.
+    pub chart: gridcraft_model::Chart,
+    /// The same chart carrying the values it showed instead of references, for a paste into
+    /// another workbook.
+    pub literal: gridcraft_model::Chart,
+    /// Document uid of the source workbook.
+    pub doc_uid: u64,
+    /// The chart's data as tab-separated text, given to the system clipboard.
+    pub text: String,
+}
+
 /// Whether a document's active content (macros) may run without asking the person first. There
 /// is no default: whoever makes a document says where it came from ([`DocState::new`]), so a new
 /// way of building one from bytes can't come out trusted by omission.
@@ -470,6 +484,8 @@ pub struct Session {
     /// Window activation counter (most recently used order).
     activation: u64,
     pub clipboard: Option<Clipboard>,
+    /// A copied chart. A copy of cells clears it, and a chart copy clears `clipboard`.
+    pub chart_clip: Option<ChartClip>,
     pub prefs: Prefs,
     pub mode: Mode,
     /// Commands run so far, without their passwords ([`cmd::journal_params`]).

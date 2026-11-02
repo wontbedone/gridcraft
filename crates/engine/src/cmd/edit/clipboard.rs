@@ -2,11 +2,15 @@ use super::cell::input_to_cell;
 use super::paste_special::paste_special;
 use super::{
     Cell, Clipboard, EngineError, Json, RangeRef, Result, Session, Value, cell_param_on, edit, json, ok, str_param, target_ranges, target_sheet,
+    u32_param,
 };
 
 // ---------------------------------------------------------------- clipboard
 
 fn copy_impl(s: &mut Session, p: &Json, cut: bool) -> Result<Json> {
+    if let Some(id) = u32_param(p, "chart") {
+        return super::chart_clip::copy_chart(s, id, cut);
+    }
     let multiple = || EngineError::Other("This action won't work on multiple selections.".into());
     let sheet = target_sheet(s, p)?;
     let ranges = target_ranges(s, p)?;
@@ -38,6 +42,7 @@ fn copy_impl(s: &mut Session, p: &Json, cut: bool) -> Result<Json> {
     let html = if p.get("html").and_then(Json::as_bool) == Some(true) { crate::io::range_html(&wb, sheet, range, &text) } else { None };
     let clip = Clipboard { wb, sheet, range, cut, doc_uid: d.uid, text: text.clone(), areas, selected, trust: d.trust };
     s.clipboard = Some(clip);
+    s.chart_clip = None;
     let mut result = json!({"range": range.a1(), "text": text});
     if let Some(html) = html {
         result["html"] = Json::String(html);
@@ -132,6 +137,7 @@ pub(super) fn cut(s: &mut Session, p: &Json) -> Result<Json> {
 
 pub(super) fn clear_clipboard(s: &mut Session, _: &Json) -> Result<Json> {
     s.clipboard = None;
+    s.chart_clip = None;
     s.format_painter = None;
     ok()
 }
@@ -151,6 +157,10 @@ pub(super) enum What {
 }
 
 pub(super) fn paste(s: &mut Session, p: &Json) -> Result<Json> {
+    // A copied chart, while the system clipboard still holds what its copy put there.
+    if super::chart_clip::pastes_chart(s, str_param(p, "text")) {
+        return super::chart_clip::paste_chart(s, p);
+    }
     // External text (from the system clipboard) when it differs from ours.
     if let Some(text) = str_param(p, "text")
         && s.clipboard.as_ref().is_none_or(|c| c.text.trim_end_matches(['\r', '\n']) != text.trim_end_matches(['\r', '\n']))

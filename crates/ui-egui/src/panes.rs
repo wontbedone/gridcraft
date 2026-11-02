@@ -289,6 +289,19 @@ fn format_chart(app: &mut SheetApp, ui: &mut Ui) {
             });
         }
     });
+    ui.collapsing("Font", |ui| {
+        let current = chart.font.clone().unwrap_or_else(|| "Automatic".to_string());
+        craft_ui::ComboBox::from_id_salt(("gridcraft.chart_font", id)).selected_text(current).show_ui(ui, |ui| {
+            if ui.selectable_label(chart.font.is_none(), "Automatic").clicked() {
+                app.run_or_alert("chart.set", json!({"chart": id, "font": Json::Null}));
+            }
+            for f in crate::fonts::families() {
+                if ui.selectable_label(chart.font.as_deref() == Some(f.as_str()), &f).clicked() {
+                    app.run_or_alert("chart.set", json!({"chart": id, "font": f}));
+                }
+            }
+        });
+    });
     ui.collapsing("Element Colors", |ui| {
         for (key, label) in gridcraft_engine::model::ChartColors::ELEMENTS {
             let picked = chart.colors.get(key).and_then(|c| c.as_ref()).and_then(|c| c.resolve(&theme));

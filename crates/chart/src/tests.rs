@@ -54,6 +54,7 @@ fn chart(kind: ChartKind) -> Chart {
         by_rows: false,
         pivot: None,
         colors: Default::default(),
+        font: None,
     }
 }
 

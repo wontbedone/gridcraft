@@ -99,7 +99,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Chart Properties",
             ["Chart Design"],
             None,
-            "{chart?: id, type?, subtype?, title?, legend?: none|bottom|top|left|right, dataLabels?, gridlines?, dataTable?: bool, dataTableKeys?: bool, dataTableHorizontalBorder?: bool, dataTableVerticalBorder?: bool, dataTableOutline?: bool (data tables: column/bar/line/area and compatible combo charts), quartiles?: exclusive|inclusive, style?, xTitle?, yTitle?, at?, width?, height?, dx?, dy?}",
+            "{chart?: id, type?, subtype?, title?, legend?: none|bottom|top|left|right, dataLabels?, gridlines?, dataTable?: bool, dataTableKeys?: bool, dataTableHorizontalBorder?: bool, dataTableVerticalBorder?: bool, dataTableOutline?: bool (data tables: column/bar/line/area and compatible combo charts), quartiles?: exclusive|inclusive, style?, xTitle?, yTitle?, font?: typeface for all chart text (null: built-in), at?, width?, height?, dx?, dy?}",
             has_doc,
             chart_set
         ),
@@ -856,6 +856,7 @@ pub fn build_chart(s: &Session, p: &Json) -> Result<(usize, Chart)> {
         by_rows,
         pivot: None,
         colors: Default::default(),
+        font: None,
     };
     Ok((sheet, chart))
 }
@@ -880,6 +881,9 @@ fn find_chart(s: &Session, p: &Json) -> Result<(usize, usize)> {
     idx.map(|i| (sheet, i)).ok_or_else(|| bad("chart", "no such chart"))
 }
 
+/// Longest typeface name `chart.set` takes.
+const MAX_FONT_NAME: usize = 255;
+
 fn chart_set(s: &mut Session, p: &Json) -> Result<Json> {
     let (si, ci) = find_chart(s, p)?;
     let at = cell_param_on(s, p, "at", si)?;
@@ -891,9 +895,19 @@ fn chart_set(s: &mut Session, p: &Json) -> Result<Json> {
             _ => Err(bad("quartiles", "expected exclusive or inclusive")),
         })
         .transpose()?;
+    // A typeface name, or null (or "") for the built-in one.
+    let font = match p.get("font") {
+        None => None,
+        Some(Json::Null) => Some(None),
+        Some(Json::String(f)) if f.chars().count() <= MAX_FONT_NAME => Some(Some(f.trim().to_string()).filter(|f| !f.is_empty())),
+        Some(_) => return Err(bad("font", "expected a font name (up to 255 characters) or null")),
+    };
     edit(s, |cx| {
         let sh = cx.sheet_mut(si)?;
         let Some(c) = sh.charts.get_mut(ci) else { return Ok(Json::Null) };
+        if let Some(f) = font {
+            c.font = f;
+        }
         if let Some(t) = str_param(p, "type") {
             c.kind = chart_kind(t, str_param(p, "subtype").unwrap_or(""));
             if !c.supports_data_table() {

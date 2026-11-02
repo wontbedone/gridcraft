@@ -84,6 +84,7 @@ fn chart_names_are_written_qualified() {
         by_rows: false,
         pivot: None,
         colors: Default::default(),
+        font: None,
     });
     wb.sheets = vec![Arc::new(s), Arc::new(Sheet::new("My Data"))];
     wb.names = vec![

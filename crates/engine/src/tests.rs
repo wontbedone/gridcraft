@@ -5374,3 +5374,134 @@ fn chart_set_colors_sets_and_resets_element_colors() {
     s.execute("edit.undo", json!({})).unwrap();
     assert_eq!(colors(&s).labels, Some(Color::Rgb(0x00FF00)));
 }
+
+#[test]
+fn chart_set_font_sets_and_clears_the_chart_typeface() {
+    let mut s = s();
+    chart_data(&mut s);
+    s.execute("insert.chart", json!({"range": "A1:C5", "type": "column"})).unwrap();
+    let font = |s: &Session| s.doc().unwrap().wb.active().unwrap().charts[0].font.clone();
+    assert_eq!(font(&s), None);
+    s.execute("chart.set", json!({"font": "  IBM Plex Mono "})).unwrap();
+    assert_eq!(font(&s).as_deref(), Some("IBM Plex Mono"));
+    // Other settings leave it alone; a bad value is refused and changes nothing.
+    s.execute("chart.set", json!({"title": "Sales"})).unwrap();
+    assert_eq!(font(&s).as_deref(), Some("IBM Plex Mono"));
+    for bad in [json!(12), json!(["Arial"]), json!("x".repeat(256))] {
+        assert!(s.execute("chart.set", json!({"font": bad, "title": "Changed"})).is_err());
+    }
+    assert_eq!(font(&s).as_deref(), Some("IBM Plex Mono"));
+    for clear in [json!(null), json!(""), json!("   ")] {
+        s.execute("chart.set", json!({"font": "Arial"})).unwrap();
+        s.execute("chart.set", json!({"font": clear})).unwrap();
+        assert_eq!(font(&s), None);
+    }
+}
+
+mod chart_clipboard {
+    use super::*;
+    use gridcraft_model::{ChartColors, Color};
+
+    /// A column chart of A1:C5 on Sheet1, styled, plus an empty Sheet2. Returns the chart id.
+    fn styled_chart(s: &mut Session) -> u32 {
+        chart_data(s);
+        let r = s.execute("insert.chart", json!({"range": "A1:C5", "type": "column", "at": "H2"})).unwrap();
+        let id = r["chart"].as_u64().unwrap() as u32;
+        s.execute("chart.set", json!({"title": "Prices", "font": "IBM Plex Mono", "width": 420, "height": 260})).unwrap();
+        s.execute("chart.setColors", json!({"background": "#1E1E2E", "gridlines": "#585B70"})).unwrap();
+        s.execute("home.insertSheet", json!({"name": "Two"})).unwrap();
+        s.execute("sheet.activate", json!({"sheet": 0})).unwrap();
+        id
+    }
+
+    fn charts(s: &Session, sheet: usize) -> Vec<gridcraft_model::Chart> {
+        s.doc().unwrap().wb.sheet(sheet).unwrap().charts.clone()
+    }
+
+    #[test]
+    fn a_copied_chart_pastes_on_another_sheet_with_its_data_and_design() {
+        let mut s = s();
+        let id = styled_chart(&mut s);
+        let copied = s.execute("edit.copy", json!({"chart": id})).unwrap();
+        // The system clipboard gets the chart's data as text.
+        assert!(copied["text"].as_str().unwrap().contains("Mon\t10\t14"), "{copied}");
+        s.execute("sheet.activate", json!({"sheet": 1})).unwrap();
+        s.execute("selection.set", json!({"range": "B3"})).unwrap();
+        let pasted = s.execute("edit.paste", json!({"text": copied["text"]})).unwrap();
+        let new_id = pasted["chart"].as_u64().unwrap() as u32;
+        let source = &charts(&s, 0)[0];
+        let copy = &charts(&s, 1)[0];
+        assert_ne!(new_id, id, "a new chart");
+        assert_eq!(copy.id, new_id);
+        assert_eq!(copy.anchor.cell, CellRef::parse("B3").unwrap(), "at the active cell");
+        assert_eq!((copy.anchor.width, copy.anchor.height), (source.anchor.width, source.anchor.height));
+        // Same data (still Sheet1's cells) and the same design.
+        assert_eq!(copy.series, source.series);
+        assert!(copy.series[0].values.starts_with("Sheet1!"), "{}", copy.series[0].values);
+        assert_eq!((copy.kind, &copy.title, &copy.font, &copy.colors), (source.kind, &source.title, &source.font, &source.colors));
+        assert_eq!(copy.colors, ChartColors { background: Some(Color::Rgb(0x1E1E2E)), gridlines: Some(Color::Rgb(0x585B70)), ..Default::default() });
+        // The source is untouched, and the paste is one undo step.
+        assert_eq!(charts(&s, 0).len(), 1);
+        s.execute("edit.undo", json!({})).unwrap();
+        assert!(charts(&s, 1).is_empty());
+    }
+
+    #[test]
+    fn a_cut_chart_leaves_its_sheet_and_pastes_elsewhere() {
+        let mut s = s();
+        let id = styled_chart(&mut s);
+        s.execute("edit.cut", json!({"chart": id})).unwrap();
+        assert!(charts(&s, 0).is_empty(), "cut removes it");
+        s.execute("sheet.activate", json!({"sheet": 1})).unwrap();
+        s.execute("edit.paste", json!({})).unwrap();
+        assert_eq!(charts(&s, 1).len(), 1);
+        assert_eq!(charts(&s, 1)[0].title.as_deref(), Some("Prices"));
+        // Undo brings back the cut chart too.
+        s.execute("edit.undo", json!({})).unwrap();
+        s.execute("edit.undo", json!({})).unwrap();
+        assert_eq!(charts(&s, 0).len(), 1);
+    }
+
+    #[test]
+    fn a_chart_pasted_into_another_workbook_keeps_the_values_it_showed() {
+        let mut s = s();
+        let id = styled_chart(&mut s);
+        let source = charts(&s, 0)[0].clone();
+        let before = gridcraft_chart::resolve(&s.doc().unwrap().wb, 0, &source);
+        s.execute("edit.copy", json!({"chart": id})).unwrap();
+        s.new_workbook();
+        s.execute("edit.paste", json!({"at": "A1"})).unwrap();
+        let wb = s.doc().unwrap().wb.clone();
+        let copy = &wb.sheet(0).unwrap().charts[0];
+        assert!(copy.series.iter().all(|x| x.values.starts_with('{')), "values travel as literals: {:?}", copy.series);
+        let after = gridcraft_chart::resolve(&wb, 0, copy);
+        assert_eq!(after.categories, before.categories);
+        assert_eq!(
+            after.series.iter().map(|x| (&x.name, &x.values)).collect::<Vec<_>>(),
+            before.series.iter().map(|x| (&x.name, &x.values)).collect::<Vec<_>>()
+        );
+        assert_eq!((&copy.font, &copy.colors), (&source.font, &source.colors));
+    }
+
+    #[test]
+    fn copying_cells_or_other_text_takes_over_from_a_copied_chart() {
+        let mut s = s();
+        let id = styled_chart(&mut s);
+        s.execute("edit.copy", json!({"chart": id})).unwrap();
+        // Text copied elsewhere since then pastes as text, not the chart.
+        s.execute("selection.set", json!({"range": "A20"})).unwrap();
+        s.execute("edit.paste", json!({"text": "hello"})).unwrap();
+        assert_eq!(charts(&s, 0).len(), 1);
+        assert_eq!(s.doc().unwrap().wb.active().unwrap().value(CellRef::parse("A20").unwrap()), Value::text("hello"));
+        // A copy of cells replaces the copied chart.
+        s.execute("edit.copy", json!({"chart": id})).unwrap();
+        s.execute("selection.set", json!({"range": "A1"})).unwrap();
+        s.execute("edit.copy", json!({})).unwrap();
+        assert!(s.chart_clip.is_none());
+        s.execute("selection.set", json!({"range": "B30"})).unwrap();
+        s.execute("edit.paste", json!({})).unwrap();
+        assert_eq!(charts(&s, 0).len(), 1, "pasting cells adds no chart");
+        // A chart that isn't there is an error, not a crash.
+        assert!(s.execute("edit.copy", json!({"chart": 999})).is_err());
+    }
+}

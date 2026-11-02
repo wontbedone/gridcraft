@@ -645,6 +645,9 @@ pub struct Chart {
     pub pivot: Option<String>,
     #[serde(default)]
     pub colors: ChartColors,
+    /// Typeface for all of the chart's text; `None` keeps the built-in one.
+    #[serde(default)]
+    pub font: Option<String>,
 }
 
 impl Chart {

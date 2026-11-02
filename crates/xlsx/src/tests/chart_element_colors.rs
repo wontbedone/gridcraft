@@ -43,6 +43,7 @@ fn chart(kind: ChartKind, colors: ChartColors) -> Chart {
         by_rows: false,
         pivot: None,
         colors,
+        font: None,
     }
 }
 
@@ -103,4 +104,33 @@ fn excel_theme_styling_is_not_read_as_picked_colors() {
         <c:spPr><a:noFill/></c:spPr></c:plotArea><c:legend><c:legendPos val=\"r\"/><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill></a:defRPr></a:pPr></a:p></c:txPr></c:legend></c:chart>\
         <c:spPr><a:solidFill><a:schemeClr val=\"bg1\"/></a:solidFill></c:spPr></c:chartSpace>";
     assert_eq!(read_chart(&parse(xml.as_bytes()).unwrap()).unwrap().colors, ChartColors::default());
+}
+
+#[test]
+fn a_chart_font_survives_save_and_reopen() {
+    for kind in [ChartKind::ColumnClustered, ChartKind::Pie, ChartKind::Waterfall] {
+        let mut c = chart(kind, ChartColors { title: Some(Color::Rgb(0x123456)), ..Default::default() });
+        c.font = Some("IBM Plex Mono".into());
+        let back = reopen(c);
+        assert_eq!(back.font.as_deref(), Some("IBM Plex Mono"), "{kind:?}");
+        assert_eq!(back.colors.title, Some(Color::Rgb(0x123456)), "{kind:?}: the font leaves colours alone");
+        assert_eq!(reopen(chart(kind, ChartColors::default())).font, None, "{kind:?}");
+    }
+    // A name needing escapes comes back as written.
+    let mut c = chart(ChartKind::Line, ChartColors::default());
+    c.font = Some("Tom & \"Jerry\" <Sans>".into());
+    assert_eq!(reopen(c).font.as_deref(), Some("Tom & \"Jerry\" <Sans>"));
+}
+
+#[test]
+fn a_theme_font_is_not_read_as_a_chart_font() {
+    for face in ["+mn-lt", "+mj-lt", ""] {
+        let xml = format!(
+            "<c:chartSpace xmlns:c=\"http://schemas.openxmlformats.org/drawingml/2006/chart\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\"><c:chart>\
+            <c:plotArea><c:barChart><c:barDir val=\"col\"/><c:ser><c:idx val=\"0\"/><c:val><c:numLit><c:ptCount val=\"1\"/><c:pt idx=\"0\"><c:v>1</c:v></c:pt></c:numLit></c:val></c:ser>\
+            <c:axId val=\"1\"/><c:axId val=\"2\"/></c:barChart><c:catAx/><c:valAx/></c:plotArea></c:chart>\
+            <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:latin typeface=\"{face}\"/></a:defRPr></a:pPr></a:p></c:txPr></c:chartSpace>"
+        );
+        assert_eq!(read_chart(&parse(xml.as_bytes()).unwrap()).unwrap().font, None, "{face:?}");
+    }
 }

@@ -8,7 +8,7 @@ use gridcraft_formula::{Expr, SheetSel};
 use gridcraft_model::{Chart, ChartColors, ChartKind, Color, DefinedName, LegendPos, LineDash, Series, Theme, Trendline, TrendlineKind, Workbook};
 
 use crate::drawing::{dml_color, srgb};
-use crate::xml::{El, esc, num};
+use crate::xml::{El, esc, esc_attr, num};
 
 // ---------------------------------------------------------------- reading
 
@@ -231,6 +231,26 @@ pub(crate) fn text_color(e: &El) -> Option<Color> {
         .find_map(|p| p.kids("r").find_map(|r| picked(r.path(&["rPr", "solidFill"]))).or_else(|| picked(p.path(&["pPr", "defRPr", "solidFill"]))))
 }
 
+/// The typeface a chart space's `txPr` sets for all its text. A theme font (`+mn-lt`) is the
+/// built-in look, not a pick.
+pub(crate) fn chart_font(root: &El) -> Option<String> {
+    let face = root.path(&["txPr", "p", "pPr", "defRPr", "latin"])?.attr("typeface")?.trim();
+    (!face.is_empty() && !face.starts_with('+')).then(|| face.to_string())
+}
+
+/// The chart space's `txPr` setting every text's typeface; empty without a font.
+pub(crate) fn font_props(ns: &str, font: Option<&str>) -> String {
+    font.map(str::trim)
+        .filter(|f| !f.is_empty())
+        .map(|f| {
+            format!(
+                "<{ns}:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:latin typeface=\"{}\"/></a:defRPr></a:pPr><a:endParaRPr lang=\"en-US\"/></a:p></{ns}:txPr>",
+                esc_attr(f)
+            )
+        })
+        .unwrap_or_default()
+}
+
 fn axis_ids(g: &El) -> Vec<String> {
     g.kids("axId").filter_map(|a| a.attr("val")).map(str::to_string).collect()
 }
@@ -313,6 +333,7 @@ pub fn read_chart(root: &El) -> Option<Chart> {
             axis_lines: axes.iter().find_map(|a| picked(a.path(&["spPr", "ln", "solidFill"]))),
             gridlines: val_axes.iter().find_map(|a| picked(a.path(&["majorGridlines", "spPr", "ln", "solidFill"]))),
         },
+        font: chart_font(root),
     })
 }
 
@@ -1039,6 +1060,7 @@ pub fn write_chart(wb: &Workbook, si: usize, ch: &Chart, book_name: &str) -> Str
     }
     s.push_str("<c:plotVisOnly val=\"1\"/><c:dispBlanksAs val=\"gap\"/></c:chart>");
     s.push_str(&sp_pr(paint.background.as_deref(), paint.border.as_deref()));
+    s.push_str(&font_props("c", ch.font.as_deref()));
     s.push_str("</c:chartSpace>");
     s
 }

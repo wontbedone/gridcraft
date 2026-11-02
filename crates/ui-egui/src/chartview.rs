@@ -2,7 +2,7 @@
 //! we paint with egui), pictures, shapes, equations and slicers.
 
 use egui::epaint::{PathShape, PathStroke};
-use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, StrokeKind, pos2, vec2};
+use egui::{Align2, Color32, FontFamily, FontId, Painter, Pos2, Rect, Stroke, StrokeKind, pos2, vec2};
 use gridcraft_chart::{HAlign, Prim, VAlign};
 use gridcraft_engine::model::{Anchor, ObjKind, ObjRef, ShapeKind, Sheet, Workbook};
 
@@ -14,14 +14,37 @@ fn rgba(c: [u8; 4]) -> Color32 {
     Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
 }
 
+/// The families a chart's text is drawn in: its own typeface once that font is loaded (bound
+/// fonts apply from the next frame, and egui panics on a family it doesn't have), else the UI font.
+#[derive(Clone)]
+pub struct TextFaces {
+    regular: FontFamily,
+    bold: FontFamily,
+}
+
+impl TextFaces {
+    pub fn of(ctx: &egui::Context, font: Option<&str>) -> TextFaces {
+        let ui = TextFaces { regular: theme::ui_font(1.0).family, bold: theme::ui_bold(1.0).family };
+        let Some(name) = font.map(str::trim).filter(|n| !n.is_empty()) else { return ui };
+        let (regular, bold) = (theme::cell_family(name, false, false), theme::cell_family(name, true, false));
+        let loaded = ctx.fonts_mut(|f| f.families().contains(&regular) && f.families().contains(&bold));
+        if loaded { TextFaces { regular, bold } } else { ui }
+    }
+
+    fn font(&self, size: f32, bold: bool) -> FontId {
+        FontId::new(size, if bold { self.bold.clone() } else { self.regular.clone() })
+    }
+}
+
 struct EguiMeasure<'a> {
     painter: &'a Painter,
     z: f32,
+    faces: &'a TextFaces,
 }
 
 impl gridcraft_chart::Measure for EguiMeasure<'_> {
     fn text_width(&self, text: &str, size: f32, bold: bool) -> f32 {
-        let font = if bold { theme::ui_bold(size * self.z) } else { theme::ui_font(size * self.z) };
+        let font = self.faces.font(size * self.z, bold);
         self.painter.layout_no_wrap(text.to_string(), font, Color32::BLACK).size().x / self.z.max(0.01)
     }
 }
@@ -36,13 +59,14 @@ pub fn paint_chart(p: &Painter, rect: Rect, wb: &Workbook, sheet: usize, chart: 
     }
     let origin = rect.center() - vec2(w * z, h * z) / 2.0;
     let data = gridcraft_chart::resolve(wb, sheet, chart);
-    let m = EguiMeasure { painter: p, z };
+    let faces = TextFaces::of(p.ctx(), chart.font.as_deref());
+    let m = EguiMeasure { painter: p, z, faces: &faces };
     let prims = gridcraft_chart::render(chart, &data, w, h, &m);
-    paint_prims(&p.with_clip_rect(rect.intersect(p.clip_rect())), origin, &prims, z);
+    paint_prims(&p.with_clip_rect(rect.intersect(p.clip_rect())), origin, &prims, z, &faces);
 }
 
-/// Paints chart primitives at `origin`, scaled by `z`.
-pub fn paint_prims(p: &Painter, origin: Pos2, prims: &[Prim], z: f32) {
+/// Paints chart primitives at `origin`, scaled by `z`, with text in `faces`.
+pub fn paint_prims(p: &Painter, origin: Pos2, prims: &[Prim], z: f32, faces: &TextFaces) {
     let pt = |x: f32, y: f32| pos2(origin.x + x * z, origin.y + y * z);
     for prim in prims {
         match prim {
@@ -119,7 +143,7 @@ pub fn paint_prims(p: &Painter, origin: Pos2, prims: &[Prim], z: f32) {
                 }
             }
             Prim::Text { x, y, text, size, color, bold, align, valign, rotation } => {
-                let font: FontId = if *bold { theme::ui_bold(size * z) } else { theme::ui_font(size * z) };
+                let font: FontId = faces.font(size * z, *bold);
                 let galley = p.layout_no_wrap(text.clone(), font, rgba(*color));
                 let sz = galley.size();
                 let ax = match align {
@@ -374,9 +398,10 @@ pub(crate) fn paint_objects(app: &SheetApp, p: &Painter, geo: &Geo, wb: &Workboo
         p.rect_filled(r.translate(vec2(0.0, 1.5)), 2.0, Color32::from_black_alpha(18));
         p.rect_filled(r, 0.0, Tokens::get(p.ctx()).grid_bg);
         let data = gridcraft_chart::resolve(wb, si, ch);
-        let m = EguiMeasure { painter: p, z: geo.z };
+        let faces = TextFaces::of(p.ctx(), ch.font.as_deref());
+        let m = EguiMeasure { painter: p, z: geo.z, faces: &faces };
         let prims = gridcraft_chart::render(ch, &data, ch.anchor.width, ch.anchor.height, &m);
-        paint_prims(&p.with_clip_rect(r.intersect(p.clip_rect())), r.min, &prims, geo.z);
+        paint_prims(&p.with_clip_rect(r.intersect(p.clip_rect())), r.min, &prims, geo.z, &faces);
         done(start, r);
     }
     paint_slicers(p, geo, wb, si, sh);

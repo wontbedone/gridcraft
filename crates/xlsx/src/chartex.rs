@@ -8,7 +8,7 @@ use gridcraft_core::RangeRef;
 use gridcraft_formula::{Expr, SheetSel};
 use gridcraft_model::{Chart, ChartColors, ChartKind, LegendPos, QuartileMethod, Series, Workbook};
 
-use crate::chart::{Paint, picked, shape_props, text_color, text_props};
+use crate::chart::{Paint, chart_font, font_props, picked, shape_props, text_color, text_props};
 use crate::drawing::{dml_color, srgb};
 use crate::xml::{El, esc, esc_attr};
 
@@ -153,6 +153,7 @@ pub fn read_chartex(root: &El) -> Option<Chart> {
             axis_lines: plot.kids("axis").find_map(|a| picked(a.path(&["spPr", "ln", "solidFill"]))),
             gridlines: plot.kids("axis").find_map(|a| picked(a.path(&["majorGridlines", "spPr", "ln", "solidFill"]))),
         },
+        font: chart_font(root),
     })
 }
 
@@ -413,9 +414,10 @@ pub fn write_chartex(wb: &Workbook, si: usize, ch: &Chart, names: &mut Vec<Strin
     // A white chart area with a light border, like other charts, unless the chart picked its own.
     let _ = write!(
         s,
-        "</cx:chart><cx:spPr><a:solidFill>{}</a:solidFill><a:ln w=\"9525\"><a:solidFill>{}</a:solidFill></a:ln></cx:spPr></cx:chartSpace>",
+        "</cx:chart><cx:spPr><a:solidFill>{}</a:solidFill><a:ln w=\"9525\"><a:solidFill>{}</a:solidFill></a:ln></cx:spPr>{}</cx:chartSpace>",
         paint.background.as_deref().unwrap_or("<a:schemeClr val=\"bg1\"/>"),
-        paint.border.as_deref().unwrap_or(GREY)
+        paint.border.as_deref().unwrap_or(GREY),
+        font_props("cx", ch.font.as_deref())
     );
     s
 }

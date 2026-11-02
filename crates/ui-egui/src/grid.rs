@@ -253,6 +253,8 @@ pub struct GridState {
     pub fill_tag: Option<FillTag>,
     /// The right-clicked chart, picture, shape or slicer: where to open its menu, its kind and id.
     pub object_menu: Option<(Pos2, &'static str, u32)>,
+    /// The frame a right-click opened `object_menu` in: that click's own press doesn't close it.
+    pub object_menu_frame: u64,
     pub marching_phase: f32,
     /// The selection outline on its way to a new selection.
     pub glide: crate::selection_glide::SelectionGlide,

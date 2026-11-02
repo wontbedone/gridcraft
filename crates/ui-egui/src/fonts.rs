@@ -267,10 +267,19 @@ fn installed_in(cat: &[Face], names: &[String]) -> Vec<String> {
 
 /// The font list a combo box shows: the standard [`crate::ribbon::FONTS`] names first (what Excel
 /// offers, and what we substitute), then every other installed family A–Z. Never blocks: until the
-/// background scan finishes it returns just the standard names.
+/// background scan finishes it returns just the standard names. The full list is built once, after
+/// the scan: the ribbon's Font box asks for it every frame.
 pub fn families() -> Vec<String> {
+    static FAMILIES: OnceLock<Vec<String>> = OnceLock::new();
+    match catalog_now() {
+        Some(cat) => FAMILIES.get_or_init(|| families_in(cat)).clone(),
+        None => crate::ribbon::FONTS.iter().map(|s| s.to_string()).collect(),
+    }
+}
+
+/// [`families`] for a given catalog.
+fn families_in(cat: &[Face]) -> Vec<String> {
     let mut out: Vec<String> = crate::ribbon::FONTS.iter().map(|s| s.to_string()).collect();
-    let Some(cat) = catalog_now() else { return out };
     let mut seen: HashSet<String> = out.iter().map(|s| s.to_lowercase()).collect();
     let mut installed: Vec<String> = cat.iter().map(|f| f.family.clone()).collect();
     installed.sort_by_key(|a| a.to_lowercase());
@@ -513,6 +522,21 @@ mod tests {
 
     fn face(family: &str, names: &[&str], path: &str, weight: f32) -> Face {
         Face { family: family.into(), names: names.iter().map(|s| s.to_string()).collect(), path: path.into(), index: 0, weight, italic: false }
+    }
+
+    #[test]
+    fn the_font_list_offers_installed_families_after_the_standard_ones() {
+        let cat = [
+            face("IBM Plex Mono", &["IBM Plex Mono"], "IBMPlexMono-Regular.ttf", 400.0),
+            face("IBM Plex Mono", &["IBM Plex Mono"], "IBMPlexMono-Bold.ttf", 700.0),
+            face("arial", &["arial"], "Arial.ttf", 400.0),
+            face("Zapfino", &["Zapfino"], "Zapfino.ttf", 400.0),
+        ];
+        let list = families_in(&cat);
+        let standard = crate::ribbon::FONTS.len();
+        assert!(list.iter().take(standard).map(String::as_str).eq(crate::ribbon::FONTS.iter().copied()));
+        // Each installed family once, A–Z, and none that the standard names already cover.
+        assert_eq!(list.get(standard..), Some(&["IBM Plex Mono".to_string(), "Zapfino".to_string()][..]));
     }
 
     #[cfg(not(target_arch = "wasm32"))]

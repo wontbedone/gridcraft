@@ -28,6 +28,8 @@ impl SheetApp {
             names.push(d.wb.theme.minor_font.clone());
             // Text boxes and shapes name their own typefaces.
             names.extend(d.wb.sheets.iter().flat_map(|sh| sh.shapes.iter().filter_map(|s| s.format.font.clone())));
+            // Charts too, for the typeface their text is drawn in.
+            names.extend(d.wb.sheets.iter().flat_map(|sh| sh.charts.iter().filter_map(|c| c.font.clone())));
         }
         names
     }

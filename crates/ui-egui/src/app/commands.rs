@@ -84,8 +84,9 @@ impl SheetApp {
             let windows = r.get("windows").and_then(Json::as_array).map(|a| a.iter().filter_map(Json::as_u64).collect()).unwrap_or_default();
             self.arrange_windows = Some((arrange, windows));
         }
-        // The new chart is selected, as after inserting any object, so Delete removes it, not its data.
-        if id == "insert.chart"
+        // The new (or pasted) chart is selected, as after inserting any object, so Delete removes
+        // it, not its data.
+        if matches!(id, "insert.chart" | "edit.paste")
             && let Ok(r) = &r
             && let Some(chart) = r.get("chart").and_then(Json::as_u64).and_then(|id| u32::try_from(id).ok())
         {

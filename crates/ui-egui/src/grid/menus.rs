@@ -378,6 +378,7 @@ pub(super) fn object_menu(app: &mut SheetApp, ui: &mut egui::Ui) {
             ui.set_min_width(200.0);
             let mut items = vec![("Delete", "object.delete")];
             if kind == "chart" {
+                items.splice(0..0, [("Cut", "edit.cut"), ("Copy", "edit.copy")]);
                 items.extend([("-", ""), ("Select Data…", "ui:selectData"), ("Format Chart Area…", "ui:formatChart")]);
             }
             let lang = crate::i18n::current(ui.ctx());
@@ -389,6 +390,7 @@ pub(super) fn object_menu(app: &mut SheetApp, ui: &mut egui::Ui) {
                 if ui.add(egui::Button::new(lang.tr(label)).frame(false).min_size(vec2(190.0, 20.0))).clicked() {
                     close = true;
                     match action {
+                        "edit.cut" | "edit.copy" => app.copy_to_clipboard(ui.ctx(), action),
                         "ui:selectData" => app.open_dialog("selectData", json!({"chart": id})),
                         "ui:formatChart" => app.grid.pane = Some("formatChart".into()),
                         _ => {
@@ -400,9 +402,13 @@ pub(super) fn object_menu(app: &mut SheetApp, ui: &mut egui::Ui) {
             }
         });
     });
+    // As with the cell menu: a quick right-click (a trackpad's two-finger click) presses and
+    // releases in one frame, and that press opened the menu, so it isn't a click elsewhere.
+    let opened_now = app.grid.object_menu_frame == ui.ctx().cumulative_frame_nr();
     if close
         || ui.input(|i| i.key_pressed(egui::Key::Escape))
-        || (ui.input(|i| i.pointer.any_pressed())
+        || (!opened_now
+            && ui.input(|i| i.pointer.any_pressed())
             && !resp.response.contains_pointer()
             && !resp.response.hovered()
             && ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| !resp.response.rect.contains(p)))

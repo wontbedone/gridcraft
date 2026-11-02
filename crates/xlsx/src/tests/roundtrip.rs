@@ -420,6 +420,7 @@ fn sample() -> Workbook {
         by_rows: false,
         pivot: None,
         colors: Default::default(),
+        font: None,
     };
     for kind in [
         ChartKind::ColumnClustered,
