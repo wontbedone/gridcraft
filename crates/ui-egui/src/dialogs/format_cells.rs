@@ -33,7 +33,9 @@ pub(super) fn format_cells(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog
                     ["General", "Number", "Currency", "Accounting", "Short Date", "Long Date", "Time", "Percentage", "Fraction", "Scientific", "Text"]
                 {
                     let c = gridcraft_engine::cmd::format::format_code_for(name).to_string();
-                    if cols[0].selectable_label(code == c, lang.tr(name)).clicked() {
+                    // Currency stays selected whatever its symbol, position or decimals.
+                    let on = code == c || (name == "Currency" && gridcraft_engine::cmd::format::currency_parts(&code).is_some());
+                    if cols[0].selectable_label(on, lang.tr(name)).clicked() && !on {
                         code = c;
                     }
                 }
@@ -41,6 +43,10 @@ pub(super) fn format_cells(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog
                 let preview = app.session.active().map(|doc| gridcraft_engine::display::format(&sample, &code, &doc.wb).text).unwrap_or_default();
                 cols[1].label(egui::RichText::new(preview).font(theme::ui_font(15.0)));
                 cols[1].add_space(8.0);
+                if let Some(parts) = gridcraft_engine::cmd::format::currency_parts(&code) {
+                    currency_options(&mut cols[1], lang, parts, &mut code);
+                    cols[1].add_space(8.0);
+                }
                 let label = cols[1].label(lang.tr("Type (custom format code):"));
                 cols[1].text_edit_singleline(&mut code).labelled_by(label.id);
                 for c in [
@@ -223,5 +229,74 @@ pub(super) fn format_cells(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog
     if !open {
         app.dialog = None;
         *confirm = true; // closes
+    }
+}
+
+/// Symbols the Currency symbol list offers; any other can be typed.
+const CURRENCY_SYMBOLS: &[(&str, &str)] = &[
+    ("$", "Dollar"),
+    ("€", "Euro"),
+    ("£", "Pound"),
+    ("¥", "Yen / Yuan"),
+    ("₹", "Rupee"),
+    ("₩", "Won"),
+    ("CHF", "Swiss franc"),
+    ("R$", "Real"),
+    ("kr", "Krona / Krone"),
+    ("zł", "Złoty"),
+    ("₺", "Lira"),
+    ("₽", "Ruble"),
+    ("₱", "Peso (PH)"),
+    ("฿", "Baht"),
+    ("₪", "Shekel"),
+    ("R", "Rand"),
+    ("A$", "Australian dollar"),
+    ("C$", "Canadian dollar"),
+    ("NZ$", "New Zealand dollar"),
+    ("HK$", "Hong Kong dollar"),
+];
+
+/// Currency's symbol (from the list or typed), its place before or after the number, and the
+/// decimal places; any change rewrites `code`.
+fn currency_options(ui: &mut egui::Ui, lang: crate::i18n::Language, (symbol, after, decimals): (String, bool, u8), code: &mut String) {
+    let (mut symbol, mut after, mut decimals) = (symbol, after, decimals);
+    let before = (symbol.clone(), after, decimals);
+    egui::Grid::new("gridcraft.currency_options").num_columns(2).show(ui, |ui| {
+        let label = ui.label(lang.tr("Symbol:"));
+        let shown = CURRENCY_SYMBOLS.iter().find(|(s, _)| *s == symbol).map_or_else(|| symbol.clone(), |(s, n)| format!("{s}  {}", lang.tr(n)));
+        craft_ui::ComboBox::from_id_salt("gridcraft.currency_symbol")
+            .selected_text(shown)
+            .show_ui(ui, |ui| {
+                for (s, n) in CURRENCY_SYMBOLS {
+                    if ui.selectable_label(symbol == *s, format!("{s}  {}", lang.tr(n))).clicked() {
+                        symbol = (*s).to_string();
+                    }
+                }
+            })
+            .response
+            .labelled_by(label.id);
+        ui.end_row();
+        let label = ui.label(lang.tr("Custom symbol:"));
+        let mut typed = symbol.clone();
+        if ui.add(egui::TextEdit::singleline(&mut typed).desired_width(80.0).char_limit(10)).labelled_by(label.id).changed()
+            && !typed.trim().is_empty()
+        {
+            symbol = typed.trim().to_string();
+        }
+        ui.end_row();
+        ui.label(lang.tr("Position:"));
+        ui.horizontal(|ui| {
+            ui.radio_value(&mut after, false, lang.tr("Before the number"));
+            ui.radio_value(&mut after, true, lang.tr("After the number"));
+        });
+        ui.end_row();
+        let label = ui.label(lang.tr("Decimal places:"));
+        ui.add(egui::DragValue::new(&mut decimals).range(0..=10)).labelled_by(label.id);
+        ui.end_row();
+    });
+    if (symbol.clone(), after, decimals) != before
+        && let Some(c) = gridcraft_engine::cmd::format::currency_format(&symbol, after, decimals)
+    {
+        *code = c;
     }
 }

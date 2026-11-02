@@ -1,8 +1,8 @@
 use super::frame::Bx;
 use super::trend::supports_trendline;
 use super::{
-    Chart, ChartData, ChartKind, Ctx, DOWN, HAlign, MAX_CATS, MAX_SERIES, MAX_TRENDLINES, Prim, Rgba, SeriesData, TEXT, Theme, UP, VAlign, auto_name,
-    series_color,
+    Chart, ChartData, ChartKind, Ctx, DOWN, HAlign, MAX_CATS, MAX_SERIES, MAX_TRENDLINES, PointFills, Prim, Rgba, SeriesData, TEXT, Theme, UP,
+    VAlign, auto_name, point_fills, series_color,
 };
 use gridcraft_model::LegendPos;
 
@@ -20,8 +20,12 @@ pub(super) fn plot_kind(chart: &Chart, s: &SeriesData) -> ChartKind {
     if chart.kind == ChartKind::Combo { if s.kind == ChartKind::Combo { ChartKind::Line } else { s.kind } } else { chart.kind }
 }
 
-/// Colour of point `j` for charts that colour by point (pie, doughnut, treemap, sunburst).
-pub(super) fn point_color(data: &ChartData, j: usize) -> Rgba {
+/// Colour of point `j` for charts that colour by point (pie, doughnut, treemap, sunburst): the
+/// colour picked for that point, else the series colour for the first and the palette after it.
+pub(super) fn point_color(fills: &PointFills, data: &ChartData, j: usize) -> Rgba {
+    if let Some(c) = fills.first().and_then(|m| m.get(&j)) {
+        return *c;
+    }
     match (j, data.series.first()) {
         (0, Some(s)) => s.color,
         _ => j.checked_rem(data.palette.len()).and_then(|k| data.palette.get(k)).copied().unwrap_or_else(|| series_color(&Theme::default(), j)),
@@ -44,7 +48,8 @@ pub fn legend_entries(chart: &Chart, data: &ChartData) -> Vec<(String, Rgba, Swa
     match chart.kind {
         ChartKind::Pie | ChartKind::Doughnut | ChartKind::Treemap | ChartKind::Sunburst => {
             let n = first_len(data).min(MAX_CATS);
-            (0..n).map(|j| (cat_label(data, j), point_color(data, j), Swatch::Box)).collect()
+            let fills = point_fills(chart);
+            (0..n).map(|j| (cat_label(data, j), point_color(&fills, data, j), Swatch::Box)).collect()
         }
         ChartKind::Histogram | ChartKind::Funnel | ChartKind::Stock => vec![],
         ChartKind::Waterfall => {

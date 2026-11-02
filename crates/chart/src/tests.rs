@@ -238,6 +238,7 @@ fn resolve_from_workbook() {
             quartiles: Default::default(),
             smooth: false,
             trendlines: Vec::new(),
+            point_colors: Vec::new(),
         },
         Series {
             name: None,
@@ -250,6 +251,7 @@ fn resolve_from_workbook() {
             quartiles: Default::default(),
             smooth: false,
             trendlines: Vec::new(),
+            point_colors: Vec::new(),
         },
         Series {
             name: Some("Literal".into()),
@@ -262,6 +264,7 @@ fn resolve_from_workbook() {
             quartiles: Default::default(),
             smooth: false,
             trendlines: Vec::new(),
+            point_colors: Vec::new(),
         },
     ];
     let d = resolve(&wb, 0, &c);
@@ -301,6 +304,7 @@ fn resolve_from_workbook() {
             quartiles: Default::default(),
             smooth: false,
             trendlines: Vec::new(),
+            point_colors: Vec::new(),
         },
         Series {
             name: None,
@@ -313,6 +317,7 @@ fn resolve_from_workbook() {
             quartiles: Default::default(),
             smooth: false,
             trendlines: Vec::new(),
+            point_colors: Vec::new(),
         },
     ];
     let d = resolve(&wb, 0, &c);
@@ -330,6 +335,7 @@ fn resolve_from_workbook() {
         quartiles: Default::default(),
         smooth: false,
         trendlines: Vec::new(),
+        point_colors: Vec::new(),
     }];
     let d = resolve(&wb, 0, &c);
     assert_eq!(d.series[0].x.as_ref().map(|x| x.len()), Some(3));
@@ -348,6 +354,7 @@ fn resolve_from_workbook() {
         quartiles: Default::default(),
         smooth: false,
         trendlines: Vec::new(),
+        point_colors: Vec::new(),
     }];
     let d = resolve(&wb, 7, &c);
     assert_eq!(d.series.len(), 1);
@@ -1049,6 +1056,7 @@ fn pie_points_follow_workbook_theme() {
         quartiles: Default::default(),
         smooth: false,
         trendlines: Vec::new(),
+        point_colors: Vec::new(),
     }];
     let d = resolve(&wb, 0, &c);
     let expected = vec![series_color(&wb.theme, 0), series_color(&wb.theme, 1)];
@@ -1321,4 +1329,47 @@ fn a_chart_font_size_scales_every_text_in_proportion() {
         let legend = size_of(&c, "North").unwrap();
         assert!((MIN_FONT_SIZE..=MAX_FONT_SIZE).contains(&legend), "{s} → {legend}");
     }
+}
+
+#[test]
+fn a_point_drawn_in_its_own_colour() {
+    let red = [0xC0, 0x39, 0x2B, 0xFF];
+    let pick = |c: &mut Chart, s: usize, j: u32| {
+        while c.series.len() <= s {
+            c.series.push(Series::default());
+        }
+        c.series[s].set_point_color(j, Some(Color::Rgb(0xC0392B)));
+    };
+    let fills = |prims: &[Prim]| -> Vec<Rgba> {
+        prims
+            .iter()
+            .filter_map(|p| match p {
+                Prim::Rect { fill: Some(f), stroke: None, .. } => Some(*f),
+                Prim::Wedge { fill, .. } => Some(*fill),
+                _ => None,
+            })
+            .collect()
+    };
+    // Columns: only the picked bar changes; its series' other bars keep the series colour.
+    let mut c = chart(ChartKind::ColumnClustered);
+    let before = fills(&render(&c, &sample(ChartKind::ColumnClustered), 640.0, 400.0, &ApproxMeasure));
+    pick(&mut c, 1, 2);
+    let after = fills(&render(&c, &sample(ChartKind::ColumnClustered), 640.0, 400.0, &ApproxMeasure));
+    assert_eq!(after.iter().filter(|f| **f == red).count(), 1, "one bar is red");
+    assert_eq!(before.len(), after.len());
+    assert_eq!(before.iter().zip(&after).filter(|(a, b)| a != b).count(), 1, "and nothing else changed");
+    // Pie: any slice, not just the first, and its legend entry follows.
+    let mut p = chart(ChartKind::Pie);
+    pick(&mut p, 0, 3);
+    let d = sample(ChartKind::Pie);
+    let prims = render(&p, &d, 640.0, 400.0, &ApproxMeasure);
+    let wedges: Vec<Rgba> = prims.iter().filter_map(|x| if let Prim::Wedge { fill, .. } = x { Some(*fill) } else { None }).collect();
+    assert_eq!(wedges.get(3), Some(&red));
+    assert_eq!(wedges.iter().filter(|f| **f == red).count(), 1);
+    assert_eq!(legend_entries(&p, &d).get(3).map(|e| e.1), Some(red));
+    // Line markers too.
+    let mut l = chart(ChartKind::LineMarkers);
+    pick(&mut l, 0, 0);
+    let prims = render(&l, &sample(ChartKind::LineMarkers), 640.0, 400.0, &ApproxMeasure);
+    assert!(prims.iter().any(|x| matches!(x, Prim::Circle { fill: Some(f), .. } if *f == red)), "a red marker");
 }

@@ -5,7 +5,9 @@ use std::fmt::Write as _;
 
 use gridcraft_core::{RangeRef, Value, category_levels};
 use gridcraft_formula::{Expr, SheetSel};
-use gridcraft_model::{Chart, ChartColors, ChartKind, Color, DefinedName, LegendPos, LineDash, Series, Theme, Trendline, TrendlineKind, Workbook};
+use gridcraft_model::{
+    Chart, ChartColors, ChartKind, Color, DefinedName, LegendPos, LineDash, PointColor, Series, Theme, Trendline, TrendlineKind, Workbook,
+};
 
 use crate::drawing::{dml_color, srgb};
 use crate::xml::{El, esc, esc_attr, num};
@@ -143,7 +145,32 @@ fn read_series(s: &El) -> Series {
         quartiles: Default::default(),
         smooth: bool_val(s, "smooth"),
         trendlines: s.kids("trendline").filter_map(read_trendline).collect(),
+        point_colors: read_point_colors(s.kids("dPt")),
     }
+}
+
+/// Point colours from `c:dPt` (chartex: `cx:dataPt`): a fill, a marker's fill or a line. Only plain
+/// RGB counts, as for element colours: Excel's varied scheme colours are its own palette.
+pub(crate) fn read_point_colors<'a>(points: impl Iterator<Item = &'a El>) -> Vec<PointColor> {
+    let mut out: Vec<PointColor> = Vec::new();
+    for d in points {
+        if out.len() >= Series::MAX_POINT_COLORS {
+            break;
+        }
+        let Some(point) = d.child("idx").and_then(|i| i.attr("val")).or_else(|| d.attr("idx")).and_then(|v| v.trim().parse::<u32>().ok()) else {
+            continue;
+        };
+        let color = picked(d.path(&["spPr", "solidFill"]))
+            .or_else(|| picked(d.path(&["marker", "spPr", "solidFill"])))
+            .or_else(|| picked(d.path(&["spPr", "ln", "solidFill"])));
+        if let Some(color) = color
+            && !out.iter().any(|p| p.point == point)
+        {
+            out.push(PointColor { point, color });
+        }
+    }
+    out.sort_by_key(|p| p.point);
+    out
 }
 
 const DASHES: [(LineDash, &str); 11] = [
@@ -627,6 +654,21 @@ fn series_xml(s: &Series, idx: usize, g: G, wb: &Workbook, si: usize) -> String 
         G::Line { markers: false, .. } | G::Scatter { lines: true } | G::Stock => x.push_str("<c:marker><c:symbol val=\"none\"/></c:marker>"),
         G::Bubble => x.push_str("<c:invertIfNegative val=\"0\"/>"),
         _ => {}
+    }
+    // Point colours come next in every series type (after invertIfNegative or the marker): a
+    // marker's fill where points are drawn as markers, the shape's fill elsewhere.
+    let marked = matches!(g, G::Line { .. } | G::Radar | G::Scatter { .. } | G::Stock);
+    for p in s.point_colors.iter().take(Series::MAX_POINT_COLORS) {
+        let Some(c) = srgb(&p.color, &wb.theme) else { continue };
+        if marked {
+            let _ = write!(
+                x,
+                "<c:dPt><c:idx val=\"{}\"/><c:marker><c:symbol val=\"circle\"/><c:size val=\"5\"/><c:spPr><a:solidFill>{c}</a:solidFill></c:spPr></c:marker></c:dPt>",
+                p.point
+            );
+        } else {
+            let _ = write!(x, "<c:dPt><c:idx val=\"{}\"/><c:spPr><a:solidFill>{c}</a:solidFill></c:spPr></c:dPt>", p.point);
+        }
     }
     // Trendlines sit between dLbls and the data in CT_LineSer, CT_BarSer, CT_AreaSer,
     // CT_ScatterSer and CT_BubbleSer; pie and radar series have none.

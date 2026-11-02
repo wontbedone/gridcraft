@@ -110,6 +110,7 @@ pub fn read_chartex(root: &El) -> Option<Chart> {
                 .path(&["spPr", "solidFill"])
                 .and_then(dml_color)
                 .filter(|c| *c != gridcraft_model::Color::Theme(4 + (series.len() % 6) as u8, 0)),
+            point_colors: crate::chart::read_point_colors(s.kids("dataPt")),
             ..Default::default()
         });
     }
@@ -317,20 +318,30 @@ pub fn write_chartex(wb: &Workbook, si: usize, ch: &Chart, names: &mut Vec<Strin
         let color = ser.color.as_ref().and_then(|c| srgb(c, &wb.theme)).unwrap_or_else(|| accent(i));
         s.push_str(&fill_xml(&color, ch.kind == ChartKind::BoxWhisker));
         let points = || crate::chart::ref_values(wb, si, &ser.values).unwrap_or_default().into_iter().take(10_000).enumerate();
+        // Points with a fill of their own: the defaults below, then the colours picked for points.
+        let mut fills: std::collections::BTreeMap<u32, String> = std::collections::BTreeMap::new();
         match ch.kind {
             ChartKind::Waterfall => {
                 for (j, v) in points() {
                     if v.as_f64().is_some_and(|n| n < 0.0) {
-                        let _ = write!(s, "<cx:dataPt idx=\"{j}\">{}</cx:dataPt>", fill_xml(&accent(i + 1), false));
+                        fills.insert(j as u32, accent(i + 1));
                     }
                 }
             }
             ChartKind::Treemap | ChartKind::Sunburst if ser.color.is_none() => {
                 for (j, _) in points() {
-                    let _ = write!(s, "<cx:dataPt idx=\"{j}\">{}</cx:dataPt>", fill_xml(&accent(j), false));
+                    fills.insert(j as u32, accent(j));
                 }
             }
             _ => {}
+        }
+        for p in ser.point_colors.iter().take(Series::MAX_POINT_COLORS) {
+            if let Some(c) = srgb(&p.color, &wb.theme) {
+                fills.insert(p.point, c);
+            }
+        }
+        for (j, c) in &fills {
+            let _ = write!(s, "<cx:dataPt idx=\"{j}\">{}</cx:dataPt>", fill_xml(c, false));
         }
         if ch.data_labels {
             let _ = write!(

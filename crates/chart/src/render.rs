@@ -54,6 +54,8 @@ struct Ctx<'a> {
     out: Vec<Prim>,
     m: &'a dyn Measure,
     c: Pal,
+    /// Colours picked for single points, by series index.
+    points: PointFills,
     /// Text sizes: the chart's own, or the built-in ones.
     label_size: f32,
     title_size: f32,
@@ -73,6 +75,37 @@ struct Pal {
     legend: Rgba,
     axis_lines: Rgba,
     gridlines: Rgba,
+}
+
+/// For each series, the points that have a colour of their own.
+type PointFills = Vec<std::collections::HashMap<usize, Rgba>>;
+
+fn point_fills(chart: &Chart) -> PointFills {
+    let theme = Theme::default();
+    chart
+        .series
+        .iter()
+        .take(MAX_SERIES)
+        .map(|s| {
+            s.point_colors
+                .iter()
+                .take(gridcraft_model::Series::MAX_POINT_COLORS)
+                .filter_map(|p| p.color.resolve(&theme).map(|[r, g, b]| (p.point as usize, [r, g, b, 0xFF])))
+                .collect()
+        })
+        .collect()
+}
+
+impl Ctx<'_> {
+    /// Fill of point `j` of series `i`: its own colour, else `default`.
+    fn point(&self, i: usize, j: usize, default: Rgba) -> Rgba {
+        self.points.get(i).and_then(|m| m.get(&j)).copied().unwrap_or(default)
+    }
+
+    /// Whether any point of series `i` has a colour of its own.
+    fn has_points(&self, i: usize) -> bool {
+        self.points.get(i).is_some_and(|m| !m.is_empty())
+    }
 }
 
 impl Pal {
@@ -175,6 +208,7 @@ pub fn render(chart: &Chart, data: &ChartData, w: f32, h: f32, m: &dyn Measure) 
         out: Vec::new(),
         m,
         c: Pal::new(&chart.colors),
+        points: point_fills(chart),
         label_size: LABEL_SIZE * k,
         title_size: TITLE_SIZE * k,
         axis_title_size: AXIS_TITLE_SIZE * k,

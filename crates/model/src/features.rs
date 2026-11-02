@@ -470,6 +470,51 @@ pub struct Series {
     /// Trendlines fitted to this series (Excel allows several per series).
     #[serde(default)]
     pub trendlines: Vec<Trendline>,
+    /// Colours picked for single points (a bar, a slice, a marker), by point index; the others
+    /// keep the series colour (or, on a pie, the palette).
+    #[serde(default)]
+    pub point_colors: Vec<PointColor>,
+}
+
+/// The colour of one data point of a series (`c:dPt`).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PointColor {
+    /// Index of the point among the series' values.
+    pub point: u32,
+    pub color: Color,
+}
+
+impl Series {
+    /// Most points that can have a colour of their own: a file or a command can't grow the list
+    /// without bound.
+    pub const MAX_POINT_COLORS: usize = 4096;
+
+    /// The colour picked for point `j`, if any.
+    pub fn point_color(&self, j: usize) -> Option<Color> {
+        self.point_colors.iter().find(|p| p.point as usize == j).map(|p| p.color)
+    }
+
+    /// Picks (or with `None`, clears) the colour of point `j`. Past [`Self::MAX_POINT_COLORS`]
+    /// picks, a new point is refused (`false`); changing or clearing one still works.
+    pub fn set_point_color(&mut self, j: u32, color: Option<Color>) -> bool {
+        match (self.point_colors.iter().position(|p| p.point == j), color) {
+            (Some(i), Some(c)) => {
+                if let Some(p) = self.point_colors.get_mut(i) {
+                    p.color = c;
+                }
+            }
+            (Some(i), None) => {
+                self.point_colors.remove(i);
+            }
+            (None, Some(_)) if self.point_colors.len() >= Self::MAX_POINT_COLORS => return false,
+            (None, Some(c)) => {
+                self.point_colors.push(PointColor { point: j, color: c });
+                self.point_colors.sort_by_key(|p| p.point);
+            }
+            (None, None) => {}
+        }
+        true
+    }
 }
 
 /// Regression a trendline fits (`c:trendlineType`).

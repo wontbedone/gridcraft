@@ -138,7 +138,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Number Format",
             ["Home", "Number"],
             None,
-            "{range?, format: \"General\"|\"Number\"|\"Currency\"|\"Accounting\"|\"Short Date\"|\"Long Date\"|\"Time\"|\"Percentage\"|\"Fraction\"|\"Scientific\"|\"Text\" | code: \"0.00\"}",
+            "{range?, format: \"General\"|\"Number\"|\"Currency\"|\"Accounting\"|\"Short Date\"|\"Long Date\"|\"Time\"|\"Percentage\"|\"Fraction\"|\"Scientific\"|\"Text\" | code: \"0.00\"; Currency: symbol?: \"€\" (default $), position?: before|after, decimals?: 0..10 (default 2)}",
             has_doc,
             number_format
         ),
@@ -225,6 +225,41 @@ fn accounting(s: &mut Session, p: &Json) -> Result<Json> {
         return Err(bad("home.accounting", "the symbol can't contain a quote, a backslash or a control character"));
     }
     set_fmt(s, p, &accounting_format(symbol))
+}
+
+/// A Currency format code: `symbol` before (`€1,234.00`) or after (`1,234.00 €`) the number, with
+/// `decimals` places. `None` for a symbol a format code can't carry: empty, over 10 characters,
+/// or with a quote, backslash, square bracket or control character.
+pub fn currency_format(symbol: &str, after: bool, decimals: u8) -> Option<String> {
+    let n = symbol.chars().count();
+    if n == 0 || n > 10 || symbol.contains(['"', '\\', '[', ']']) || symbol.chars().any(char::is_control) {
+        return None;
+    }
+    let number = if decimals == 0 { "#,##0".to_string() } else { format!("#,##0.{}", "0".repeat(usize::from(decimals.min(10)))) };
+    Some(if after { format!("{number} [${symbol}]") } else { format!("[${symbol}]{number}") })
+}
+
+/// The symbol, position (true: after the number) and decimal places of a Currency code that
+/// [`currency_format`] makes, or Excel's own `"$"#,##0.00`. `None` for any other code.
+pub fn currency_parts(code: &str) -> Option<(String, bool, u8)> {
+    let decimals = |number: &str| -> Option<u8> {
+        let rest = number.strip_prefix("#,##0")?;
+        match rest.strip_prefix('.') {
+            None if rest.is_empty() => Some(0),
+            Some(z) if !z.is_empty() && z.len() <= 10 && z.chars().all(|c| c == '0') => u8::try_from(z.len()).ok(),
+            _ => None,
+        }
+    };
+    if let Some(rest) = code.strip_prefix("\"$\"") {
+        return Some(("$".into(), false, decimals(rest)?));
+    }
+    if let Some(rest) = code.strip_prefix("[$") {
+        let (symbol, number) = rest.split_once(']')?;
+        return Some((symbol.to_string(), false, decimals(number)?)).filter(|(s, ..)| !s.is_empty() && !s.contains('-'));
+    }
+    let (number, tag) = code.split_once(" [$")?;
+    let symbol = tag.strip_suffix(']')?;
+    Some((symbol.to_string(), true, decimals(number)?)).filter(|(s, ..)| !s.is_empty() && !s.contains('-'))
 }
 
 fn accounting_format(symbol: &str) -> String {
@@ -725,6 +760,21 @@ pub fn format_code_for(name: &str) -> &str {
 }
 
 fn number_format(s: &mut Session, p: &Json) -> Result<Json> {
+    if str_param(p, "format") == Some("Currency") && ["symbol", "position", "decimals"].iter().any(|k| p.get(*k).is_some()) {
+        let symbol = str_param(p, "symbol").unwrap_or("$");
+        let after = match str_param(p, "position") {
+            None | Some("before") => false,
+            Some("after") => true,
+            Some(_) => return Err(bad("position", "expected before or after")),
+        };
+        let decimals = match p.get("decimals") {
+            None => 2,
+            Some(d) => d.as_u64().filter(|d| *d <= 10).ok_or_else(|| bad("decimals", "expected 0 to 10"))? as u8,
+        };
+        let code = currency_format(symbol, after, decimals)
+            .ok_or_else(|| bad("symbol", "expected 1 to 10 characters, without quotes, backslashes, square brackets or control characters"))?;
+        return set_fmt(s, p, &code);
+    }
     let code = str_param(p, "code")
         .map(str::to_string)
         .or_else(|| str_param(p, "format").map(|f| format_code_for(f).to_string()))

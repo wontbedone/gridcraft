@@ -253,10 +253,26 @@ pub(super) fn move_chart(s: &mut Session, p: &Json) -> Result<Json> {
 
 pub(super) fn format_series(s: &mut Session, p: &Json) -> Result<Json> {
     let idx = u32_param(p, "series").unwrap_or(0) as usize;
-    let color = str_param(p, "color").and_then(Color::from_hex);
+    let Some(point) = p.get("point") else {
+        let color = str_param(p, "color").and_then(Color::from_hex);
+        return with_chart(s, p, |c| {
+            if let Some(se) = c.series.get_mut(idx) {
+                se.color = color;
+            }
+            Ok(())
+        });
+    };
+    // One point (a bar, a slice, a marker): a hex colour, or null (or no colour) for the
+    // series' own again.
+    let point = point.as_u64().and_then(|n| u32::try_from(n).ok()).ok_or_else(|| bad("point", "expected a point index"))?;
+    let color = match p.get("color") {
+        None | Some(Json::Null) => None,
+        Some(v) => Some(v.as_str().and_then(Color::from_hex).ok_or_else(|| bad("color", "expected a hex colour such as \"#C0392B\", or null"))?),
+    };
     with_chart(s, p, |c| {
-        if let Some(se) = c.series.get_mut(idx) {
-            se.color = color;
+        let se = c.series.get_mut(idx).ok_or_else(|| bad("series", "no such series"))?;
+        if !se.set_point_color(point, color) {
+            return Err(bad("point", "this series already has the most point colours a chart keeps"));
         }
         Ok(())
     })

@@ -38,6 +38,7 @@ fn workbook(categories: &str, values: &str) -> Workbook {
             smooth: false,
             trendlines: Vec::new(),
             quartiles: Default::default(),
+            point_colors: Vec::new(),
         }],
         legend: LegendPos::Bottom,
         data_labels: false,

@@ -145,3 +145,33 @@ fn a_theme_font_is_not_read_as_a_chart_font() {
         assert_eq!(read_chart(&parse(xml.as_bytes()).unwrap()).unwrap().font, None, "{face:?}");
     }
 }
+
+#[test]
+fn point_colours_survive_save_and_reopen() {
+    for kind in [
+        ChartKind::ColumnClustered,
+        ChartKind::BarClustered,
+        ChartKind::Line,
+        ChartKind::LineMarkers,
+        ChartKind::Area,
+        ChartKind::Pie,
+        ChartKind::Doughnut,
+        ChartKind::Scatter,
+        ChartKind::Bubble,
+        ChartKind::Radar,
+        ChartKind::Waterfall,
+        ChartKind::Funnel,
+        ChartKind::Treemap,
+    ] {
+        let mut c = chart(kind, ChartColors::default());
+        c.series[0].set_point_color(1, Some(Color::Rgb(0xC0392B)));
+        c.series[0].set_point_color(0, Some(Color::Rgb(0x2E86C1)));
+        let back = reopen(c.clone());
+        assert_eq!(back.series[0].point_colors, c.series[0].point_colors, "{kind:?}");
+        assert_eq!(reopen(back).series[0].point_colors, c.series[0].point_colors, "{kind:?} second save");
+    }
+    // Without picks, no point colours appear (Excel's own varied palette doesn't count).
+    for kind in [ChartKind::Pie, ChartKind::Treemap, ChartKind::Waterfall] {
+        assert!(reopen(chart(kind, ChartColors::default())).series[0].point_colors.is_empty(), "{kind:?}");
+    }
+}

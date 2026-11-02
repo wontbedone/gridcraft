@@ -86,7 +86,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Format Selection",
             ["Format", "Current Selection"],
             None,
-            "{chart?, series?: index, color?: hex}",
+            "{chart?, series?: index, color?: hex, point?: index (colour that one point: a bar, slice or marker; color null restores the series colour)}",
             has_doc,
             format_series
         ),

@@ -5521,3 +5521,83 @@ mod chart_clipboard {
         assert!(s.execute("edit.copy", json!({"chart": 999})).is_err());
     }
 }
+
+#[test]
+fn chart_format_selection_colours_one_point() {
+    use gridcraft_model::Color;
+    let mut s = s();
+    chart_data(&mut s);
+    s.execute("insert.chart", json!({"range": "A1:C5", "type": "pie"})).unwrap();
+    let series = |s: &Session| s.doc().unwrap().wb.active().unwrap().charts[0].series[0].clone();
+    s.execute("chart.formatSelection", json!({"series": 0, "point": 2, "color": "#C0392B"})).unwrap();
+    s.execute("chart.formatSelection", json!({"series": 0, "point": 0, "color": "2E86C1"})).unwrap();
+    assert_eq!(series(&s).point_color(2), Some(Color::Rgb(0xC0392B)));
+    assert_eq!(series(&s).point_color(0), Some(Color::Rgb(0x2E86C1)));
+    assert_eq!(series(&s).point_color(1), None);
+    // The series colour is a separate setting.
+    assert_eq!(series(&s).color, None);
+    // Bad input is refused and changes nothing.
+    for bad in [
+        json!({"point": -1, "color": "#FFFFFF"}),
+        json!({"point": "two", "color": "#FFFFFF"}),
+        json!({"point": 1, "color": "#12"}),
+        json!({"series": 9, "point": 1, "color": "#FFFFFF"}),
+    ] {
+        assert!(s.execute("chart.formatSelection", bad.clone()).is_err(), "{bad}");
+    }
+    assert_eq!(series(&s).point_colors.len(), 2);
+    // Null restores the slice's own colour; undo brings the pick back.
+    s.execute("chart.formatSelection", json!({"series": 0, "point": 2, "color": null})).unwrap();
+    assert_eq!(series(&s).point_color(2), None);
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(series(&s).point_color(2), Some(Color::Rgb(0xC0392B)));
+}
+
+#[test]
+fn currency_format_takes_any_symbol_position_and_decimals() {
+    use crate::cmd::format::{currency_format, currency_parts};
+    let mut s = s();
+    s.execute("cell.set", json!({"cell": "B2", "input": "-1234.5"})).unwrap();
+    let shown = |s: &Session| {
+        let d = s.doc().unwrap();
+        let sh = d.wb.active().unwrap();
+        let c = CellRef::parse("B2").unwrap();
+        crate::display::format(&sh.value(c), d.wb.styles.get(sh.style_id(c)).num_fmt.as_str(), &d.wb).text
+    };
+    for (params, expected) in [
+        (json!({"format": "Currency", "symbol": "€"}), "-€1,234.50"),
+        (json!({"format": "Currency", "symbol": "€", "position": "after"}), "-1,234.50 €"),
+        (json!({"format": "Currency", "symbol": "CHF", "decimals": 0}), "-CHF1,235"),
+        (json!({"format": "Currency", "symbol": "£", "decimals": 3}), "-£1,234.500"),
+        (json!({"format": "Currency"}), "-$1,234.50"),
+    ] {
+        let mut p = params.clone();
+        p["range"] = json!("B2");
+        s.execute("home.numberFormat", p).unwrap();
+        assert_eq!(shown(&s), expected, "{params}");
+    }
+    // A symbol the format code can't carry is refused, leaving the format as it was.
+    for bad in [
+        json!({"symbol": "\""}),
+        json!({"symbol": "a]b"}),
+        json!({"symbol": ""}),
+        json!({"symbol": "x".repeat(11)}),
+        json!({"position": "middle"}),
+        json!({"decimals": 11}),
+    ] {
+        let mut p = bad.clone();
+        p["format"] = json!("Currency");
+        p["range"] = json!("B2");
+        assert!(s.execute("home.numberFormat", p).is_err(), "{bad}");
+    }
+    assert_eq!(shown(&s), "-$1,234.50");
+    // What the dialog reads back from a code.
+    for (sym, after, dec) in [("€", false, 2u8), ("€", true, 2), ("CHF", false, 0), ("kr", true, 3), ("$", false, 2)] {
+        let code = currency_format(sym, after, dec).unwrap();
+        assert_eq!(currency_parts(&code), Some((sym.to_string(), after, dec)), "{code}");
+    }
+    assert_eq!(currency_parts("\"$\"#,##0.00"), Some(("$".into(), false, 2)));
+    for other in ["#,##0.00", "0%", "_(\"$\"* #,##0.00_)", "[$€-x-euro2] * #,##0.00", "General"] {
+        assert_eq!(currency_parts(other), None, "{other}");
+    }
+}

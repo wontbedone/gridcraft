@@ -287,33 +287,41 @@ fn format_chart(app: &mut SheetApp, ui: &mut Ui) {
                     }
                 });
             });
+            point_colors(app, ui, &chart, data.as_ref(), i, &theme.colors);
         }
     });
     ui.collapsing("Font", |ui| {
         let current = chart.font.clone().unwrap_or_else(|| "Automatic".to_string());
-        craft_ui::ComboBox::from_id_salt(("gridcraft.chart_font", id)).selected_text(current).show_ui(ui, |ui| {
-            if ui.selectable_label(chart.font.is_none(), "Automatic").clicked() {
-                app.run_or_alert("chart.set", json!({"chart": id, "font": Json::Null}));
-            }
-            for f in crate::fonts::families() {
-                if ui.selectable_label(chart.font.as_deref() == Some(f.as_str()), &f).clicked() {
-                    app.run_or_alert("chart.set", json!({"chart": id, "font": f}));
+        let label = ui.label("Typeface");
+        craft_ui::ComboBox::from_id_salt(("gridcraft.chart_font", id))
+            .selected_text(current)
+            .show_ui(ui, |ui| {
+                if ui.selectable_label(chart.font.is_none(), "Automatic").clicked() {
+                    app.run_or_alert("chart.set", json!({"chart": id, "font": Json::Null}));
                 }
-            }
-        });
+                for f in crate::fonts::families() {
+                    if ui.selectable_label(chart.font.as_deref() == Some(f.as_str()), &f).clicked() {
+                        app.run_or_alert("chart.set", json!({"chart": id, "font": f}));
+                    }
+                }
+            })
+            .response
+            .labelled_by(label.id);
         ui.horizontal(|ui| {
-            ui.label("Size");
+            let label = ui.label("Size");
             // Applied when the drag or edit ends, as the chart's Size fields are.
             let draft = egui::Id::unique(("gridcraft.chart_font_size", id));
             let current = chart.font_size.unwrap_or(gridcraft_chart::LABEL_SIZE);
             let mut size = ui.data_mut(|d| d.get_temp::<f32>(draft)).unwrap_or(current);
-            let field = ui.add(
-                egui::DragValue::new(&mut size)
-                    .range(gridcraft_chart::MIN_FONT_SIZE..=gridcraft_chart::MAX_FONT_SIZE)
-                    .speed(0.25)
-                    .suffix(" pt")
-                    .max_decimals(1),
-            );
+            let field = ui
+                .add(
+                    egui::DragValue::new(&mut size)
+                        .range(gridcraft_chart::MIN_FONT_SIZE..=gridcraft_chart::MAX_FONT_SIZE)
+                        .speed(0.25)
+                        .suffix(" pt")
+                        .max_decimals(1),
+                )
+                .labelled_by(label.id);
             if field.drag_stopped() || field.lost_focus() {
                 ui.data_mut(|d| d.remove::<f32>(draft));
                 if size != current && !ui.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -403,6 +411,59 @@ fn format_chart(app: &mut SheetApp, ui: &mut Ui) {
             ui.data_mut(|d| d.insert_temp(draft, (w, h)));
         } else {
             ui.data_mut(|d| d.remove::<(f32, f32)>(draft));
+        }
+    });
+}
+
+/// Most points the pane lists for picking colours one by one.
+const MAX_LISTED_POINTS: usize = 200;
+
+/// Series `i`'s points (bars, slices, markers), each with its colour and a palette to change it.
+fn point_colors(
+    app: &mut SheetApp,
+    ui: &mut Ui,
+    chart: &gridcraft_engine::model::Chart,
+    data: Option<&gridcraft_chart::ChartData>,
+    i: usize,
+    theme_colors: &[u32; 12],
+) {
+    use gridcraft_engine::model::ChartKind;
+    let (Some(series), Some(data)) = (chart.series.get(i), data) else { return };
+    let Some(sd) = data.series.get(i) else { return };
+    let n = sd.values.len();
+    if n == 0 {
+        return;
+    }
+    // A pie-like chart colours its points from the palette; others in the series colour.
+    let by_point = matches!(chart.kind, ChartKind::Pie | ChartKind::Doughnut | ChartKind::Treemap | ChartKind::Sunburst) && i == 0;
+    let id = chart.id;
+    egui::CollapsingHeader::new(if by_point { "Slice colors" } else { "Point colors" }).id_salt(("gridcraft.chart_points", id, i)).show(ui, |ui| {
+        for j in 0..n.min(MAX_LISTED_POINTS) {
+            let picked = series.point_color(j).and_then(|c| c.resolve(&gridcraft_engine::model::Theme::default()));
+            let fill = match picked {
+                Some([r, g, b]) => [r, g, b],
+                None if by_point && j > 0 => data.palette.get(j % data.palette.len().max(1)).map_or([128, 128, 128], |c| [c[0], c[1], c[2]]),
+                None => [sd.color[0], sd.color[1], sd.color[2]],
+            };
+            let label = data.categories.get(j).filter(|c| !c.is_empty()).cloned().unwrap_or_else(|| format!("Point {}", j + 1));
+            ui.push_id(j, |ui| {
+                ui.horizontal(|ui| {
+                    let (r, _) = ui.allocate_exact_size(vec2(14.0, 14.0), egui::Sense::hover());
+                    ui.painter().rect_filled(r, 2.0, Color32::from_rgb(fill[0], fill[1], fill[2]));
+                    ui.collapsing(label, |ui| {
+                        if let Some(c) = crate::widgets::color_palette(ui, theme_colors, "Automatic") {
+                            let color = if c == "none" { Json::Null } else { json!(c) };
+                            app.run_or_alert("chart.formatSelection", json!({"chart": id, "series": i, "point": j, "color": color}));
+                        }
+                    });
+                });
+            });
+        }
+        if n > MAX_LISTED_POINTS {
+            ui.label(
+                egui::RichText::new(format!("First {MAX_LISTED_POINTS} of {n} points; the others can be coloured with chart.formatSelection."))
+                    .small(),
+            );
         }
     });
 }

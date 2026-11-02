@@ -100,11 +100,15 @@ pub(super) fn waterfall(ctx: &mut Ctx, chart: &Chart, data: &ChartData, area: Bx
     let bw = cw / 1.5;
     let vy = |v: f64| plot.bottom() - ys.frac(v) * plot.h;
     for (j, (b, t, kind)) in bars.iter().enumerate() {
-        let color = match kind {
-            1 => UP,
-            2 => DOWN,
-            _ => s.color,
-        };
+        let color = ctx.point(
+            0,
+            j,
+            match kind {
+                1 => UP,
+                2 => DOWN,
+                _ => s.color,
+            },
+        );
         let x = plot.x + (j as f32 + 0.5) * cw - bw / 2.0;
         let (yb, yt) = (vy(*b), vy(*t));
         ctx.rect(x, yb.min(yt), bw, (yb - yt).abs().max(0.5), color, None);
@@ -145,14 +149,15 @@ pub(super) fn funnel(ctx: &mut Ctx, chart: &Chart, data: &ChartData, area: Bx) {
         let bw = (*v / max) as f32 * plot.w;
         let x = plot.x + (plot.w - bw) / 2.0;
         let y = plot.y + j as f32 * slot + (slot - bh) / 2.0;
+        let fill = ctx.point(0, j, s.color);
         if bw > 0.0 {
-            ctx.rect(x, y, bw, bh, s.color, None);
+            ctx.rect(x, y, bw, bh, fill, None);
         }
         if show {
             let yc = y + bh / 2.0;
             if chart.data_labels {
                 let t = f.format(s.values.get(j).copied().flatten().unwrap_or(0.0), None);
-                let color = if ctx.tw(&t, ctx.label_size) + 4.0 <= bw { on(s.color) } else { ctx.c.labels };
+                let color = if ctx.tw(&t, ctx.label_size) + 4.0 <= bw { on(fill) } else { ctx.c.labels };
                 ctx.text(plot.cx(), yc, &t, ctx.label_size, color, (HAlign::Center, VAlign::Middle));
             }
             let l = ctx.fit(labels.get(j).map(String::as_str).unwrap_or(""), ctx.label_size, lw - 8.0);
@@ -182,7 +187,7 @@ pub(super) fn pie(ctx: &mut Ctx, chart: &Chart, data: &ChartData, area: Bx, inne
     for (j, v) in vals.iter().enumerate() {
         let sweep = (*v / total) as f32 * TAU;
         if sweep > 1e-4 {
-            let fill = point_color(data, j);
+            let fill = point_color(&ctx.points, data, j);
             ctx.out.push(Prim::Wedge {
                 cx,
                 cy,
@@ -289,7 +294,7 @@ pub(super) fn treemap(ctx: &mut Ctx, chart: &Chart, data: &ChartData, area: Bx) 
     items.sort_by(|a, b| b.1.total_cmp(&a.1));
     let f = Fmt::new(&s.number_format);
     for (j, b) in squarify(&items, area) {
-        let fill = point_color(data, j);
+        let fill = point_color(&ctx.points, data, j);
         ctx.rect(b.x, b.y, b.w, b.h, fill, Some((ctx.c.background, 1.5)));
         if b.w > 24.0 && b.h > ctx.label_size * 1.6 {
             let name = ctx.fit(&cat_label(data, j), ctx.label_size, b.w - 8.0);

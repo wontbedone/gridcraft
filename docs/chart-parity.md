@@ -52,7 +52,7 @@ Sources: `crates/model/src/features.rs` (`ChartKind`, `Chart`, `Series`), `crate
 | Error bars | fixed, %, standard deviation/error, custom | **missing** |
 | Up/down bars, high-low lines, drop lines, series lines | yes | **missing** |
 | Data table under the chart | yes | yes for column, bar, line, area and compatible combo charts: live formatted values, blank cells, grouped category headers, optional legend keys, horizontal/vertical borders and outline; native `c:dTable` XLSX round-trip; shared UI/print/PDF rendering |
-| Per-series / per-point fill, line, marker, effects | Format pane for every element | series colour; chart background, border, plot area, title, axis titles, labels, legend, axis lines and gridlines colours (`chart.setColors`, Format Chart › Element Colors, any colour via More Colors…). Element colours are saved to and read from XLSX (chart and chartex parts) |
+| Per-series / per-point fill, line, marker, effects | Format pane for every element | series colour; per-point colour for any chart type (a bar, slice, marker, bubble, box or funnel/waterfall bar: `chart.formatSelection` `point`, Format Chart › Series › Point/Slice colors, kept in XLSX as `c:dPt`/`cx:dataPt`); chart background, border, plot area, title, axis titles, labels, legend, axis lines and gridlines colours (`chart.setColors`, Format Chart › Element Colors, any colour via More Colors…). Element colours are saved to and read from XLSX (chart and chartex parts) |
 | Chart styles and colour palettes | ~16 styles × colour sets | style number stored, own palettes |
 | Chart sheets | yes | **kept, not editable**: not shown, and written back unchanged in their place on save (#727); left out when a sheet they plot is deleted or renamed. No F11 / Move Chart > New sheet |
 | Chart templates (`.crtx`) | yes | **missing** |
@@ -111,6 +111,7 @@ are (#1686). Such series get no `numCache`/`strCache` on save (#1690).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-11-02 | minor | Per-point colours for every chart type (pie slices beyond the first, single bars, markers, bubbles, treemap boxes, funnel and waterfall bars), from the Format Chart pane or `chart.formatSelection` `point`, saved in XLSX |
 | 2026-11-02 | minor | Chart font size (4–72 pt, title and axis titles in proportion, saved in XLSX); the desktop app now catalogs installed fonts at launch, so the font lists offer them and cells and charts draw in them |
 | 2026-11-02 | minor | Charts copy, cut and paste between sheets and workbooks (Cmd+C/X/V, right-click Cut/Copy), keeping data and design; a chart font (any installed typeface, saved in XLSX); the chart right-click menu no longer closes at once after a quick (trackpad) right-click |
 | 2026-11-02 | minor | Chart element colours: `chart.setColors` and Format Chart › Element Colors pick the background, border, plot area, title, axis titles, labels, legend, axis lines and gridlines colours; separators between slices, bars and markers follow the background. Saved in XLSX as plain RGB colours (DrawingML and chartex); Excel's scheme-colour styling still reads as the built-in look |
