@@ -53,6 +53,7 @@ fn chart(kind: ChartKind) -> Chart {
         source: None,
         by_rows: false,
         pivot: None,
+        colors: Default::default(),
     }
 }
 
@@ -1257,4 +1258,41 @@ fn box_whisker_draws_each_series_quartile_method() {
     assert_eq!(heights.len(), 2);
     // The boxes span 3.5 and 2.5 data units on the same value axis.
     assert!((heights[0] / heights[1] - 1.4).abs() < 0.001);
+}
+
+#[test]
+fn element_colors_reach_every_element() {
+    let rgb = |n: u8| [n, 0x10, 0x20, 0xFF];
+    let hex = |n: u8| Some(Color::Rgb(((n as u32) << 16) | 0x1020));
+    let mut c = chart(ChartKind::ColumnClustered);
+    c.colors = gridcraft_model::ChartColors {
+        background: hex(1),
+        border: hex(2),
+        plot_area: hex(3),
+        title: hex(4),
+        axis_titles: hex(5),
+        labels: hex(6),
+        legend: hex(7),
+        axis_lines: hex(8),
+        gridlines: hex(9),
+    };
+    let prims = render(&c, &sample(ChartKind::ColumnClustered), 640.0, 400.0, &ApproxMeasure);
+    assert!(matches!(prims.first(), Some(Prim::Rect { fill: Some(f), stroke: Some((s, _)), .. }) if *f == rgb(1) && *s == rgb(2)));
+    assert!(prims.iter().any(|p| matches!(p, Prim::Rect { fill: Some(f), .. } if *f == rgb(3))), "plot area");
+    let text = |s: &str| {
+        prims.iter().find_map(|p| match p {
+            Prim::Text { text, color, .. } if text == s => Some(*color),
+            _ => None,
+        })
+    };
+    assert_eq!(text("Quarterly Sales"), Some(rgb(4)));
+    assert_eq!(text("Quarter"), Some(rgb(5)));
+    assert_eq!(text("Q1"), Some(rgb(6)));
+    assert_eq!(text("North"), Some(rgb(7)));
+    let line = |c: Rgba| prims.iter().any(|p| matches!(p, Prim::Line { color, .. } if *color == c));
+    assert!(line(rgb(8)), "axis lines");
+    assert!(line(rgb(9)), "gridlines");
+    // Unpicked, the chart keeps its built-in white background.
+    let plain = render(&chart(ChartKind::ColumnClustered), &sample(ChartKind::ColumnClustered), 640.0, 400.0, &ApproxMeasure);
+    assert!(matches!(plain.first(), Some(Prim::Rect { fill: Some([0xFF, 0xFF, 0xFF, 0xFF]), .. })));
 }

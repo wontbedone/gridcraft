@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 
 use gridcraft_core::{RangeRef, Value, category_levels};
 use gridcraft_formula::{Expr, SheetSel};
-use gridcraft_model::{Chart, ChartKind, Color, DefinedName, LegendPos, LineDash, Series, Trendline, TrendlineKind, Workbook};
+use gridcraft_model::{Chart, ChartColors, ChartKind, Color, DefinedName, LegendPos, LineDash, Series, Theme, Trendline, TrendlineKind, Workbook};
 
 use crate::drawing::{dml_color, srgb};
 use crate::xml::{El, esc, num};
@@ -214,6 +214,23 @@ fn rich_title(t: &El) -> Option<String> {
     None
 }
 
+/// An element colour as GridCraft writes it: a plain `<a:srgbClr>` in a `solidFill`. Scheme and
+/// tinted colours are Excel's own styling far more often than a pick, so they keep the built-in look.
+pub(crate) fn picked(fill: Option<&El>) -> Option<Color> {
+    let c = fill?.child("srgbClr")?;
+    if !c.children.is_empty() {
+        return None;
+    }
+    Color::from_hex(c.attr("val")?)
+}
+
+/// Text colour of a title's rich text, or of an element's `txPr`.
+pub(crate) fn text_color(e: &El) -> Option<Color> {
+    let body = e.path(&["tx", "rich"]).or_else(|| e.child("txPr"))?;
+    body.kids("p")
+        .find_map(|p| p.kids("r").find_map(|r| picked(r.path(&["rPr", "solidFill"]))).or_else(|| picked(p.path(&["pPr", "defRPr", "solidFill"]))))
+}
+
 fn axis_ids(g: &El) -> Vec<String> {
     g.kids("axId").filter_map(|a| a.attr("val")).map(str::to_string).collect()
 }
@@ -251,6 +268,7 @@ pub fn read_chart(root: &El) -> Option<Chart> {
     } else {
         (cat_ax, val_axes.first().copied())
     };
+    let axes: Vec<&El> = [x_ax, y_ax].into_iter().flatten().collect();
     let legend = match chart.child("legend") {
         None => LegendPos::None,
         Some(l) => match l.child_val("legendPos").unwrap_or("r") {
@@ -281,6 +299,20 @@ pub fn read_chart(root: &El) -> Option<Chart> {
         source: None,
         by_rows: false,
         pivot: root.path(&["pivotSource", "name"]).map(|n| strip_book(n.text.trim()).to_string()).filter(|n| !n.is_empty()),
+        colors: ChartColors {
+            background: picked(root.path(&["spPr", "solidFill"])),
+            border: picked(root.path(&["spPr", "ln", "solidFill"])),
+            plot_area: picked(plot.path(&["spPr", "solidFill"])),
+            title: chart.child("title").and_then(text_color),
+            axis_titles: axes.iter().filter_map(|a| a.child("title")).find_map(text_color),
+            labels: axes
+                .iter()
+                .find_map(|a| a.child("txPr").and_then(text_color))
+                .or_else(|| groups.iter().find_map(|(g, _)| g.child("dLbls").and_then(text_color))),
+            legend: chart.child("legend").and_then(text_color),
+            axis_lines: axes.iter().find_map(|a| picked(a.path(&["spPr", "ln", "solidFill"]))),
+            gridlines: val_axes.iter().find_map(|a| picked(a.path(&["majorGridlines", "spPr", "ln", "solidFill"]))),
+        },
     })
 }
 
@@ -653,16 +685,84 @@ fn trendline_xml(t: &Trendline, wb: &Workbook) -> String {
     x
 }
 
-fn dlbls(show: bool) -> String {
+fn dlbls(show: bool, color: Option<&str>) -> String {
     format!(
-        "<c:dLbls><c:showLegendKey val=\"0\"/><c:showVal val=\"{}\"/><c:showCatName val=\"0\"/><c:showSerName val=\"0\"/><c:showPercent val=\"0\"/><c:showBubbleSize val=\"0\"/></c:dLbls>",
+        "<c:dLbls>{}<c:showLegendKey val=\"0\"/><c:showVal val=\"{}\"/><c:showCatName val=\"0\"/><c:showSerName val=\"0\"/><c:showPercent val=\"0\"/><c:showBubbleSize val=\"0\"/></c:dLbls>",
+        tx_pr(color),
         show as u8
     )
 }
 
+/// A chart's element colours as `<a:srgbClr>` XML, resolved against the workbook theme.
+pub(crate) struct Paint {
+    pub(crate) background: Option<String>,
+    pub(crate) border: Option<String>,
+    pub(crate) plot_area: Option<String>,
+    pub(crate) title: Option<String>,
+    pub(crate) axis_titles: Option<String>,
+    pub(crate) labels: Option<String>,
+    pub(crate) legend: Option<String>,
+    pub(crate) axis_lines: Option<String>,
+    pub(crate) gridlines: Option<String>,
+}
+
+impl Paint {
+    pub(crate) fn new(c: &ChartColors, theme: &Theme) -> Paint {
+        let x = |c: &Option<Color>| c.as_ref().and_then(|c| srgb(c, theme));
+        Paint {
+            background: x(&c.background),
+            border: x(&c.border),
+            plot_area: x(&c.plot_area),
+            title: x(&c.title),
+            axis_titles: x(&c.axis_titles),
+            labels: x(&c.labels),
+            legend: x(&c.legend),
+            axis_lines: x(&c.axis_lines),
+            gridlines: x(&c.gridlines),
+        }
+    }
+}
+
+/// `<c:spPr>` with a solid fill and/or a solid outline; empty when neither is set.
+fn sp_pr(fill: Option<&str>, line: Option<&str>) -> String {
+    shape_props("c", fill, line)
+}
+
+/// `<{ns}:spPr>` with a solid fill and/or a solid outline; empty when neither is set.
+pub(crate) fn shape_props(ns: &str, fill: Option<&str>, line: Option<&str>) -> String {
+    if fill.is_none() && line.is_none() {
+        return String::new();
+    }
+    let mut s = format!("<{ns}:spPr>");
+    if let Some(f) = fill {
+        let _ = write!(s, "<a:solidFill>{f}</a:solidFill>");
+    }
+    if let Some(l) = line {
+        let _ = write!(s, "<a:ln><a:solidFill>{l}</a:solidFill></a:ln>");
+    }
+    let _ = write!(s, "</{ns}:spPr>");
+    s
+}
+
+/// `<c:txPr>` colouring its element's text; empty when unset.
+fn tx_pr(color: Option<&str>) -> String {
+    text_props("c", color)
+}
+
+/// `<{ns}:txPr>` colouring its element's text; empty when unset.
+pub(crate) fn text_props(ns: &str, color: Option<&str>) -> String {
+    color
+        .map(|c| {
+            format!(
+                "<{ns}:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:solidFill>{c}</a:solidFill></a:defRPr></a:pPr><a:endParaRPr lang=\"en-US\"/></a:p></{ns}:txPr>"
+            )
+        })
+        .unwrap_or_default()
+}
+
 fn group_xml(g: G, series: &[(usize, &Series)], ch: &Chart, axes: (u32, u32), wb: &Workbook, si: usize) -> String {
     let sers: String = series.iter().map(|(i, s)| series_xml(s, *i, g, wb, si)).collect();
-    let dl = dlbls(ch.data_labels);
+    let dl = dlbls(ch.data_labels, Paint::new(&ch.colors, &wb.theme).labels.as_deref());
     let ax = format!("<c:axId val=\"{}\"/><c:axId val=\"{}\"/>", axes.0, axes.1);
     match g {
         G::Bar { bar, grouping } => {
@@ -690,10 +790,16 @@ fn group_xml(g: G, series: &[(usize, &Series)], ch: &Chart, axes: (u32, u32), wb
     }
 }
 
-fn title_xml(t: &str) -> String {
+fn title_xml(t: &str, color: Option<&str>) -> String {
+    let (def, run) = match color {
+        Some(c) => {
+            (format!("<a:defRPr><a:solidFill>{c}</a:solidFill></a:defRPr>"), format!("<a:rPr lang=\"en-US\"><a:solidFill>{c}</a:solidFill></a:rPr>"))
+        }
+        None => ("<a:defRPr/>".to_string(), String::new()),
+    };
     let mut s = String::from("<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/>");
     for line in t.split('\n') {
-        let _ = write!(s, "<a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>{}</a:t></a:r></a:p>", esc(line));
+        let _ = write!(s, "<a:p><a:pPr>{def}</a:pPr><a:r>{run}<a:t>{}</a:t></a:r></a:p>", esc(line));
     }
     s.push_str("</c:rich></c:tx><c:overlay val=\"0\"/></c:title>");
     s
@@ -708,6 +814,7 @@ struct Ax<'a> {
     grid: bool,
     title: Option<&'a str>,
     crosses_max: bool,
+    paint: &'a Paint,
 }
 
 fn axis_xml(a: &Ax<'_>) -> String {
@@ -719,14 +826,21 @@ fn axis_xml(a: &Ax<'_>) -> String {
         a.pos
     );
     if a.grid {
-        s.push_str("<c:majorGridlines/>");
+        match sp_pr(None, a.paint.gridlines.as_deref()) {
+            sp if sp.is_empty() => s.push_str("<c:majorGridlines/>"),
+            sp => {
+                let _ = write!(s, "<c:majorGridlines>{sp}</c:majorGridlines>");
+            }
+        }
     }
     if let Some(t) = a.title {
-        s.push_str(&title_xml(t));
+        s.push_str(&title_xml(t, a.paint.axis_titles.as_deref()));
     }
     let _ = write!(
         s,
-        "<c:numFmt formatCode=\"General\" sourceLinked=\"1\"/><c:majorTickMark val=\"out\"/><c:minorTickMark val=\"none\"/><c:tickLblPos val=\"nextTo\"/><c:crossAx val=\"{}\"/><c:crosses val=\"{}\"/>",
+        "<c:numFmt formatCode=\"General\" sourceLinked=\"1\"/><c:majorTickMark val=\"out\"/><c:minorTickMark val=\"none\"/><c:tickLblPos val=\"nextTo\"/>{}{}<c:crossAx val=\"{}\"/><c:crosses val=\"{}\"/>",
+        sp_pr(None, a.paint.axis_lines.as_deref()),
+        tx_pr(a.paint.labels.as_deref()),
         a.cross,
         if a.crosses_max { "max" } else { "autoZero" }
     );
@@ -757,10 +871,11 @@ pub fn write_chart(wb: &Workbook, si: usize, ch: &Chart, book_name: &str) -> Str
         let link = strip_book(link);
         let _ = write!(s, "<c:pivotSource><c:name>[{}]{}</c:name><c:fmtId val=\"0\"/></c:pivotSource>", esc(book_name), esc(link));
     }
+    let paint = Paint::new(&ch.colors, &wb.theme);
     s.push_str("<c:chart>");
     match &ch.title {
         Some(t) if !t.is_empty() => {
-            s.push_str(&title_xml(t));
+            s.push_str(&title_xml(t, paint.title.as_deref()));
             s.push_str("<c:autoTitleDeleted val=\"0\"/>");
         }
         _ => s.push_str("<c:autoTitleDeleted val=\"1\"/>"),
@@ -811,6 +926,7 @@ pub fn write_chart(wb: &Workbook, si: usize, ch: &Chart, book_name: &str) -> Str
                 grid: false,
                 title: ch.x_title.as_deref(),
                 crosses_max: false,
+                paint: &paint,
             }));
             s.push_str(&axis_xml(&Ax {
                 cat: false,
@@ -821,6 +937,7 @@ pub fn write_chart(wb: &Workbook, si: usize, ch: &Chart, book_name: &str) -> Str
                 grid: ch.gridlines,
                 title: ch.y_title.as_deref(),
                 crosses_max: false,
+                paint: &paint,
             }));
         }
         G::Bar { bar: true, .. } => {
@@ -833,6 +950,7 @@ pub fn write_chart(wb: &Workbook, si: usize, ch: &Chart, book_name: &str) -> Str
                 grid: false,
                 title: ch.x_title.as_deref(),
                 crosses_max: false,
+                paint: &paint,
             }));
             s.push_str(&axis_xml(&Ax {
                 cat: false,
@@ -843,6 +961,7 @@ pub fn write_chart(wb: &Workbook, si: usize, ch: &Chart, book_name: &str) -> Str
                 grid: ch.gridlines,
                 title: ch.y_title.as_deref(),
                 crosses_max: false,
+                paint: &paint,
             }));
         }
         _ => {
@@ -855,6 +974,7 @@ pub fn write_chart(wb: &Workbook, si: usize, ch: &Chart, book_name: &str) -> Str
                 grid: false,
                 title: ch.x_title.as_deref(),
                 crosses_max: false,
+                paint: &paint,
             }));
             s.push_str(&axis_xml(&Ax {
                 cat: false,
@@ -865,23 +985,47 @@ pub fn write_chart(wb: &Workbook, si: usize, ch: &Chart, book_name: &str) -> Str
                 grid: ch.gridlines,
                 title: ch.y_title.as_deref(),
                 crosses_max: false,
+                paint: &paint,
             }));
         }
     }
     if secondary.is_some() {
-        s.push_str(&axis_xml(&Ax { cat: true, id: 3, cross: 4, pos: "b", delete: true, grid: false, title: None, crosses_max: false }));
-        s.push_str(&axis_xml(&Ax { cat: false, id: 4, cross: 3, pos: "r", delete: false, grid: false, title: None, crosses_max: true }));
+        s.push_str(&axis_xml(&Ax {
+            cat: true,
+            id: 3,
+            cross: 4,
+            pos: "b",
+            delete: true,
+            grid: false,
+            title: None,
+            crosses_max: false,
+            paint: &paint,
+        }));
+        s.push_str(&axis_xml(&Ax {
+            cat: false,
+            id: 4,
+            cross: 3,
+            pos: "r",
+            delete: false,
+            grid: false,
+            title: None,
+            crosses_max: true,
+            paint: &paint,
+        }));
     }
     if let Some(t) = &ch.data_table {
         let _ = write!(
             s,
-            "<c:dTable><c:showHorzBorder val=\"{}\"/><c:showVertBorder val=\"{}\"/><c:showOutline val=\"{}\"/><c:showKeys val=\"{}\"/></c:dTable>",
+            "<c:dTable><c:showHorzBorder val=\"{}\"/><c:showVertBorder val=\"{}\"/><c:showOutline val=\"{}\"/><c:showKeys val=\"{}\"/>{}{}</c:dTable>",
             u8::from(t.horizontal_border),
             u8::from(t.vertical_border),
             u8::from(t.outline),
-            u8::from(t.show_keys)
+            u8::from(t.show_keys),
+            sp_pr(None, paint.axis_lines.as_deref()),
+            tx_pr(paint.labels.as_deref())
         );
     }
+    s.push_str(&sp_pr(paint.plot_area.as_deref(), None));
     s.push_str("</c:plotArea>");
     let pos = match ch.legend {
         LegendPos::None => None,
@@ -891,8 +1035,10 @@ pub fn write_chart(wb: &Workbook, si: usize, ch: &Chart, book_name: &str) -> Str
         LegendPos::Right => Some("r"),
     };
     if let Some(p) = pos {
-        let _ = write!(s, "<c:legend><c:legendPos val=\"{p}\"/><c:overlay val=\"0\"/></c:legend>");
+        let _ = write!(s, "<c:legend><c:legendPos val=\"{p}\"/><c:overlay val=\"0\"/>{}</c:legend>", tx_pr(paint.legend.as_deref()));
     }
-    s.push_str("<c:plotVisOnly val=\"1\"/><c:dispBlanksAs val=\"gap\"/></c:chart></c:chartSpace>");
+    s.push_str("<c:plotVisOnly val=\"1\"/><c:dispBlanksAs val=\"gap\"/></c:chart>");
+    s.push_str(&sp_pr(paint.background.as_deref(), paint.border.as_deref()));
+    s.push_str("</c:chartSpace>");
     s
 }

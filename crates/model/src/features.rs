@@ -556,6 +556,71 @@ impl Default for ChartDataTable {
     }
 }
 
+/// Colours picked for a chart's own elements; `None` keeps the built-in colour. Series colours
+/// live on each [`Series`].
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ChartColors {
+    /// Chart area fill, also the separators drawn between pie slices, bars and markers.
+    pub background: Option<Color>,
+    /// Outline around the chart area.
+    pub border: Option<Color>,
+    /// Fill behind the plot (inside the axes).
+    pub plot_area: Option<Color>,
+    pub title: Option<Color>,
+    pub axis_titles: Option<Color>,
+    /// Axis tick labels, data labels and data-table text.
+    pub labels: Option<Color>,
+    pub legend: Option<Color>,
+    /// Axis lines and data-table borders.
+    pub axis_lines: Option<Color>,
+    pub gridlines: Option<Color>,
+}
+
+impl ChartColors {
+    /// Element keys, as `chart.setColors` takes them, with their display names.
+    pub const ELEMENTS: [(&'static str, &'static str); 9] = [
+        ("background", "Background"),
+        ("border", "Border"),
+        ("plotArea", "Plot Area"),
+        ("title", "Title"),
+        ("axisTitles", "Axis Titles"),
+        ("labels", "Labels"),
+        ("legend", "Legend"),
+        ("axisLines", "Axis Lines"),
+        ("gridlines", "Gridlines"),
+    ];
+
+    pub fn get(&self, key: &str) -> Option<&Option<Color>> {
+        Some(match key {
+            "background" => &self.background,
+            "border" => &self.border,
+            "plotArea" => &self.plot_area,
+            "title" => &self.title,
+            "axisTitles" => &self.axis_titles,
+            "labels" => &self.labels,
+            "legend" => &self.legend,
+            "axisLines" => &self.axis_lines,
+            "gridlines" => &self.gridlines,
+            _ => return None,
+        })
+    }
+
+    pub fn get_mut(&mut self, key: &str) -> Option<&mut Option<Color>> {
+        Some(match key {
+            "background" => &mut self.background,
+            "border" => &mut self.border,
+            "plotArea" => &mut self.plot_area,
+            "title" => &mut self.title,
+            "axisTitles" => &mut self.axis_titles,
+            "labels" => &mut self.labels,
+            "legend" => &mut self.legend,
+            "axisLines" => &mut self.axis_lines,
+            "gridlines" => &mut self.gridlines,
+            _ => return None,
+        })
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Chart {
     pub id: u32,
@@ -578,6 +643,8 @@ pub struct Chart {
     /// whenever the PivotTable is refreshed or its layout changes.
     #[serde(default)]
     pub pivot: Option<String>,
+    #[serde(default)]
+    pub colors: ChartColors,
 }
 
 impl Chart {

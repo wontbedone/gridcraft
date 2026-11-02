@@ -2,7 +2,7 @@
 
 use std::f32::consts::{PI, TAU};
 
-use gridcraft_model::{Chart, ChartKind, LineDash, QuartileMethod, Theme, TrendlineKind};
+use gridcraft_model::{Chart, ChartColors, ChartKind, Color, LineDash, QuartileMethod, Theme, TrendlineKind};
 
 use crate::axis::{Fmt, Scale, clean, fixed_scale, nice_scale};
 use crate::resolve::{MAX_POINTS, MAX_SERIES, MAX_TRENDLINES, series_color};
@@ -48,6 +48,40 @@ const MAX_LABELS: usize = 200;
 struct Ctx<'a> {
     out: Vec<Prim>,
     m: &'a dyn Measure,
+    c: Pal,
+}
+
+/// The colours a chart draws its own elements in: the built-in ones, or what the chart's
+/// [`ChartColors`] picked.
+#[derive(Clone, Copy)]
+struct Pal {
+    background: Rgba,
+    border: Rgba,
+    plot_area: Option<Rgba>,
+    title: Rgba,
+    axis_titles: Rgba,
+    labels: Rgba,
+    legend: Rgba,
+    axis_lines: Rgba,
+    gridlines: Rgba,
+}
+
+impl Pal {
+    fn new(colors: &ChartColors) -> Pal {
+        let theme = Theme::default();
+        let pick = |c: &Option<Color>, default: Rgba| c.as_ref().and_then(|c| c.resolve(&theme)).map_or(default, |[r, g, b]| [r, g, b, 0xFF]);
+        Pal {
+            background: pick(&colors.background, WHITE),
+            border: pick(&colors.border, GRID),
+            plot_area: colors.plot_area.as_ref().and_then(|c| c.resolve(&theme)).map(|[r, g, b]| [r, g, b, 0xFF]),
+            title: pick(&colors.title, TEXT),
+            axis_titles: pick(&colors.axis_titles, TEXT),
+            labels: pick(&colors.labels, TEXT),
+            legend: pick(&colors.legend, TEXT),
+            axis_lines: pick(&colors.axis_lines, AXIS),
+            gridlines: pick(&colors.gridlines, GRID),
+        }
+    }
 }
 
 impl Ctx<'_> {
@@ -127,14 +161,15 @@ pub fn render(chart: &Chart, data: &ChartData, w: f32, h: f32, m: &dyn Measure) 
         return vec![];
     }
     let data = sanitize(data);
-    let mut ctx = Ctx { out: Vec::new(), m };
-    ctx.out.push(Prim::Rect { x: 0.0, y: 0.0, w, h, fill: Some(WHITE), stroke: Some((GRID, 1.0)), radius: 0.0 });
+    let mut ctx = Ctx { out: Vec::new(), m, c: Pal::new(&chart.colors) };
+    ctx.out.push(Prim::Rect { x: 0.0, y: 0.0, w, h, fill: Some(ctx.c.background), stroke: Some((ctx.c.border, 1.0)), radius: 0.0 });
     let pad = (w.min(h) * 0.04).clamp(2.0, 10.0);
     let mut area = Bx { x: pad, y: pad, w: w - 2.0 * pad, h: h - 2.0 * pad };
     if let Some(t) = chart_title(chart, &data) {
         let size = TITLE_SIZE.min(h * 0.12).max(4.0);
         let t = ctx.fit(&t, size, area.w);
-        ctx.text(w / 2.0, area.y, &t, size, TEXT, (HAlign::Center, VAlign::Top));
+        let color = ctx.c.title;
+        ctx.text(w / 2.0, area.y, &t, size, color, (HAlign::Center, VAlign::Top));
         let used = size * 1.3 + 4.0;
         area.y += used;
         area.h -= used;

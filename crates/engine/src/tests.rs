@@ -5349,3 +5349,28 @@ fn a_view_kept_through_redo_doesnt_make_the_saved_workbook_dirty() {
     assert_eq!(d.wb.active().unwrap().view, gridcraft_model::SheetViewMode::PageBreakPreview);
     assert!(!d.is_dirty(), "back at the saved edits, the view alone isn't a change");
 }
+
+#[test]
+fn chart_set_colors_sets_and_resets_element_colors() {
+    use gridcraft_model::Color;
+    let mut s = s();
+    chart_data(&mut s);
+    s.execute("insert.chart", json!({"range": "A1:C5", "type": "column"})).unwrap();
+    let colors = |s: &Session| s.doc().unwrap().wb.active().unwrap().charts[0].colors.clone();
+    s.execute("chart.setColors", json!({"background": "#102030", "gridlines": "FF0000", "labels": "#00ff00"})).unwrap();
+    let c = colors(&s);
+    assert_eq!(c.background, Some(Color::Rgb(0x102030)));
+    assert_eq!(c.gridlines, Some(Color::Rgb(0xFF0000)));
+    assert_eq!(c.labels, Some(Color::Rgb(0x00FF00)));
+    assert_eq!(c.title, None);
+    // A bad colour is refused and changes nothing.
+    assert!(s.execute("chart.setColors", json!({"title": "#12", "background": "#FFFFFF"})).is_err());
+    assert_eq!(colors(&s).background, Some(Color::Rgb(0x102030)));
+    // Null restores one element; reset restores all of them.
+    s.execute("chart.setColors", json!({"gridlines": null})).unwrap();
+    assert_eq!(colors(&s).gridlines, None);
+    s.execute("chart.setColors", json!({"reset": true, "title": "#000080"})).unwrap();
+    assert_eq!(colors(&s), gridcraft_model::ChartColors { title: Some(Color::Rgb(0x000080)), ..Default::default() });
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(colors(&s).labels, Some(Color::Rgb(0x00FF00)));
+}

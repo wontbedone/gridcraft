@@ -3,8 +3,8 @@
 
 use gridcraft_core::{CellRef, RangeRef, Value};
 use gridcraft_model::{
-    Anchor, Chart, Color, DefinedName, HAlign, LegendPos, NumFmt, Shape, ShapeKind, Sheet, SheetViewMode, TableColumn, TotalsFn, Trendline,
-    TrendlineKind, Workbook,
+    Anchor, Chart, ChartColors, Color, DefinedName, HAlign, LegendPos, NumFmt, Shape, ShapeKind, Sheet, SheetViewMode, TableColumn, TotalsFn,
+    Trendline, TrendlineKind, Workbook,
 };
 use serde_json::{Value as Json, json};
 
@@ -22,7 +22,7 @@ mod window;
 
 pub(crate) use cells::is_checkbox_cell;
 use cells::{background, checkbox, draw_border, new_cell_style, recently_used, theme_colors, theme_fonts, toggle_checkbox, use_in_formula};
-use chart::{add_element, change_colors, format_series, move_chart, quick_layout, select_data};
+use chart::{add_element, change_colors, format_series, move_chart, quick_layout, select_data, set_colors};
 use data::{from_csv, from_table_range, queries, table_resize};
 use objects::{align, arrange, rotate, selection_pane, shape_fill, shape_outline};
 pub(crate) use scripts::has_scripts;
@@ -51,6 +51,15 @@ pub fn specs() -> Vec<CommandSpec> {
             "{chart?, palette: colorful|monochrome|accent1..accent6 | colors: [hex…]}",
             has_doc,
             change_colors
+        ),
+        cmd!(
+            "chart.setColors",
+            "Element Colors",
+            ["Format", "Shape Styles"],
+            None,
+            "{chart?, reset?: bool, background?, border?, plotArea?, title?, axisTitles?, labels?, legend?, axisLines?, gridlines?: hex | null (built-in colour)}",
+            has_doc,
+            set_colors
         ),
         cmd!(
             "chart.selectData",

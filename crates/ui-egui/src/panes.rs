@@ -167,7 +167,7 @@ fn selection(app: &mut SheetApp, ui: &mut Ui) {
     }
 }
 
-/// Draws the chart format pane: title, type, legend, elements/axis titles, series colors, palettes/layouts and size.
+/// Draws the chart format pane: title, type, legend, elements/axis titles, series and element colors, palettes/layouts and size.
 fn format_chart(app: &mut SheetApp, ui: &mut Ui) {
     let Some(id) = app.selected_chart() else {
         ui.label(egui::RichText::new("Select a chart to format it.").italics());
@@ -287,6 +287,33 @@ fn format_chart(app: &mut SheetApp, ui: &mut Ui) {
                     }
                 });
             });
+        }
+    });
+    ui.collapsing("Element Colors", |ui| {
+        for (key, label) in gridcraft_engine::model::ChartColors::ELEMENTS {
+            let picked = chart.colors.get(key).and_then(|c| c.as_ref()).and_then(|c| c.resolve(&theme));
+            ui.push_id(key, |ui| {
+                ui.horizontal(|ui| {
+                    let (r, _) = ui.allocate_exact_size(vec2(14.0, 14.0), egui::Sense::hover());
+                    // A filled swatch for a picked colour, an empty outline for the built-in one.
+                    match picked {
+                        Some([red, g, b]) => {
+                            ui.painter().rect_filled(r, 2.0, Color32::from_rgb(red, g, b));
+                        }
+                        None => {
+                            ui.painter().rect_stroke(r, 2.0, egui::Stroke::new(1.0, Tokens::get(ui.ctx()).text_dim), egui::StrokeKind::Inside);
+                        }
+                    }
+                    ui.collapsing(label, |ui| {
+                        if let Some(c) = crate::widgets::color_palette(ui, &theme.colors, "Automatic") {
+                            app.run_or_alert("chart.setColors", json!({"chart": id, key: if c == "none" { Json::Null } else { json!(c) }}));
+                        }
+                    });
+                });
+            });
+        }
+        if ui.button("Reset All Colors").clicked() {
+            app.run_or_alert("chart.setColors", json!({"chart": id, "reset": true}));
         }
     });
     ui.collapsing("Colors & Layout", |ui| {

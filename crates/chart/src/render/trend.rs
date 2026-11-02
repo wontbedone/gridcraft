@@ -1,8 +1,8 @@
 use super::frame::{Bx, value_range};
 use super::lines::decimate;
 use super::{
-    ChartKind, Ctx, HAlign, LABEL_SIZE, LineDash, MAX_CATS, MAX_LINE_PTS, MAX_TRENDLINES, Prim, SeriesData, TEXT, TrendlineKind, VAlign,
-    fit_trendline, moving_average,
+    ChartKind, Ctx, HAlign, LABEL_SIZE, LineDash, MAX_CATS, MAX_LINE_PTS, MAX_TRENDLINES, Prim, SeriesData, TrendlineKind, VAlign, fit_trendline,
+    moving_average,
 };
 
 // ---------------------------------------------------------------- trendlines
@@ -165,6 +165,6 @@ pub(super) fn draw_trend_labels(ctx: &mut Ctx, plot: Bx, labels: &[String]) {
             break;
         }
         let t = ctx.fit(t, LABEL_SIZE, plot.w - 8.0);
-        ctx.text(plot.right() - 4.0, y, &t, LABEL_SIZE, TEXT, (HAlign::Right, VAlign::Top));
+        ctx.text(plot.right() - 4.0, y, &t, LABEL_SIZE, ctx.c.labels, (HAlign::Right, VAlign::Top));
     }
 }

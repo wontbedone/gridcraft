@@ -1,5 +1,5 @@
 use super::frame::Bx;
-use super::{Ctx, MAX_LINE_PTS, MAX_MARKERS, Prim, Rgba, WHITE};
+use super::{Ctx, MAX_LINE_PTS, MAX_MARKERS, Prim, Rgba};
 use std::collections::HashSet;
 
 // ---------------------------------------------------------------- helpers
@@ -126,7 +126,7 @@ pub(super) fn draw_markers(ctx: &mut Ctx, pts: impl Iterator<Item = [f32; 2]>, r
             break;
         }
         if seen.insert(((p[0] * 0.5) as i32, (p[1] * 0.5) as i32)) {
-            ctx.out.push(Prim::Circle { cx: p[0], cy: p[1], r, fill: Some(color), stroke: Some((WHITE, 0.75)) });
+            ctx.out.push(Prim::Circle { cx: p[0], cy: p[1], r, fill: Some(color), stroke: Some((ctx.c.background, 0.75)) });
         }
     }
 }

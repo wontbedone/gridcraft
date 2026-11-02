@@ -1,6 +1,6 @@
 use super::{
-    CellRef, Chart, Color, EngineError, Json, LegendPos, RangeRef, Result, Session, Trendline, TrendlineKind, bad, bool_param, cell_param_on, edit,
-    f64_param, json, split_sheet, str_param, u32_param,
+    CellRef, Chart, ChartColors, Color, EngineError, Json, LegendPos, RangeRef, Result, Session, Trendline, TrendlineKind, bad, bool_param,
+    cell_param_on, edit, f64_param, json, split_sheet, str_param, u32_param,
 };
 
 fn find_chart(s: &Session, p: &Json) -> Result<(usize, usize)> {
@@ -257,6 +257,34 @@ pub(super) fn format_series(s: &mut Session, p: &Json) -> Result<Json> {
     with_chart(s, p, |c| {
         if let Some(se) = c.series.get_mut(idx) {
             se.color = color;
+        }
+        Ok(())
+    })
+}
+
+/// Sets the colours of a chart's own elements: each `ChartColors::ELEMENTS` key takes a hex
+/// colour, or null for the built-in colour; `reset: true` first restores every element.
+pub(super) fn set_colors(s: &mut Session, p: &Json) -> Result<Json> {
+    let mut picks = Vec::new();
+    for (key, _) in ChartColors::ELEMENTS {
+        match p.get(key) {
+            None => {}
+            Some(Json::Null) => picks.push((key, None)),
+            Some(v) => {
+                let c = v.as_str().and_then(Color::from_hex).ok_or_else(|| bad(key, "expected a hex colour such as \"#1F4E79\", or null"))?;
+                picks.push((key, Some(c)));
+            }
+        }
+    }
+    let reset = bool_param(p, "reset").unwrap_or(false);
+    with_chart(s, p, |c| {
+        if reset {
+            c.colors = ChartColors::default();
+        }
+        for (key, color) in picks {
+            if let Some(slot) = c.colors.get_mut(key) {
+                *slot = color;
+            }
         }
         Ok(())
     })

@@ -6,8 +6,9 @@ use std::fmt::Write as _;
 
 use gridcraft_core::RangeRef;
 use gridcraft_formula::{Expr, SheetSel};
-use gridcraft_model::{Chart, ChartKind, LegendPos, QuartileMethod, Series, Workbook};
+use gridcraft_model::{Chart, ChartColors, ChartKind, LegendPos, QuartileMethod, Series, Workbook};
 
+use crate::chart::{Paint, picked, shape_props, text_color, text_props};
 use crate::drawing::{dml_color, srgb};
 use crate::xml::{El, esc, esc_attr};
 
@@ -138,6 +139,20 @@ pub fn read_chartex(root: &El) -> Option<Chart> {
         source: None,
         by_rows: false,
         pivot: None,
+        colors: ChartColors {
+            background: picked(root.path(&["spPr", "solidFill"])),
+            border: picked(root.path(&["spPr", "ln", "solidFill"])),
+            plot_area: picked(region.path(&["plotSurface", "spPr", "solidFill"])),
+            title: chart.child("title").and_then(text_color),
+            axis_titles: plot.kids("axis").filter_map(|a| a.child("title")).find_map(text_color),
+            labels: plot
+                .kids("axis")
+                .find_map(|a| a.child("txPr").and_then(text_color))
+                .or_else(|| region.kids("series").find_map(|s| s.child("dataLabels").and_then(text_color))),
+            legend: chart.child("legend").and_then(text_color),
+            axis_lines: plot.kids("axis").find_map(|a| picked(a.path(&["spPr", "ln", "solidFill"]))),
+            gridlines: plot.kids("axis").find_map(|a| picked(a.path(&["majorGridlines", "spPr", "ln", "solidFill"]))),
+        },
     })
 }
 
@@ -268,11 +283,20 @@ pub fn write_chartex(wb: &Workbook, si: usize, ch: &Chart, names: &mut Vec<Strin
         let _ = write!(s, "<cx:numDim type=\"{}\">{}</cx:numDim>", if hierarchy { "size" } else { "val" }, f_xml(wb, si, &ser.values, names));
         s.push_str("</cx:data>");
     }
+    let paint = Paint::new(&ch.colors, &wb.theme);
     s.push_str("</cx:chartData><cx:chart>");
     if let Some(t) = ch.title.as_deref().filter(|t| !t.is_empty()) {
-        let _ = write!(s, "<cx:title pos=\"t\" align=\"ctr\" overlay=\"0\"><cx:tx><cx:txData><cx:v>{}</cx:v></cx:txData></cx:tx></cx:title>", esc(t));
+        let _ = write!(
+            s,
+            "<cx:title pos=\"t\" align=\"ctr\" overlay=\"0\"><cx:tx><cx:txData><cx:v>{}</cx:v></cx:txData></cx:tx>{}</cx:title>",
+            esc(t),
+            text_props("cx", paint.title.as_deref())
+        );
     }
     s.push_str("<cx:plotArea><cx:plotAreaRegion>");
+    if let Some(fill) = &paint.plot_area {
+        let _ = write!(s, "<cx:plotSurface>{}</cx:plotSurface>", shape_props("cx", Some(fill), None));
+    }
     let layout = match ch.kind {
         ChartKind::BoxWhisker => "boxWhisker",
         ChartKind::Waterfall => "waterfall",
@@ -307,7 +331,11 @@ pub fn write_chartex(wb: &Workbook, si: usize, ch: &Chart, names: &mut Vec<Strin
             _ => {}
         }
         if ch.data_labels {
-            s.push_str("<cx:dataLabels><cx:visibility seriesName=\"0\" categoryName=\"0\" value=\"1\"/></cx:dataLabels>");
+            let _ = write!(
+                s,
+                "<cx:dataLabels>{}<cx:visibility seriesName=\"0\" categoryName=\"0\" value=\"1\"/></cx:dataLabels>",
+                text_props("cx", paint.labels.as_deref())
+            );
         }
         let _ = write!(s, "<cx:dataId val=\"{i}\"/>");
         match ch.kind {
@@ -337,19 +365,27 @@ pub fn write_chartex(wb: &Workbook, si: usize, ch: &Chart, names: &mut Vec<Strin
     };
     let title = |t: Option<&str>| {
         t.filter(|t| !t.is_empty())
-            .map(|t| format!("<cx:title><cx:tx><cx:txData><cx:v>{}</cx:v></cx:txData></cx:tx></cx:title>", esc(t)))
+            .map(|t| {
+                format!(
+                    "<cx:title><cx:tx><cx:txData><cx:v>{}</cx:v></cx:txData></cx:tx>{}</cx:title>",
+                    esc(t),
+                    text_props("cx", paint.axis_titles.as_deref())
+                )
+            })
             .unwrap_or_default()
     };
+    // Axis line and label colours follow the tick labels, as the schema orders them.
+    let axis_tail = format!("<cx:tickLabels/>{}{}", shape_props("cx", None, paint.axis_lines.as_deref()), text_props("cx", paint.labels.as_deref()));
     if let Some(gap) = gap {
-        let _ =
-            write!(s, "<cx:axis id=\"0\"><cx:catScaling gapWidth=\"{}\"/>{}<cx:tickLabels/></cx:axis>", esc_attr(gap), title(ch.x_title.as_deref()));
+        let _ = write!(s, "<cx:axis id=\"0\"><cx:catScaling gapWidth=\"{}\"/>{}{axis_tail}</cx:axis>", esc_attr(gap), title(ch.x_title.as_deref()));
         if ch.kind != ChartKind::Funnel {
+            let grid = paint.gridlines.as_deref().unwrap_or(GREY);
             let _ = write!(
                 s,
-                "<cx:axis id=\"1\"><cx:valScaling/>{}{}<cx:tickLabels/></cx:axis>",
+                "<cx:axis id=\"1\"><cx:valScaling/>{}{}{axis_tail}</cx:axis>",
                 title(ch.y_title.as_deref()),
                 if ch.gridlines {
-                    format!("<cx:majorGridlines><cx:spPr><a:ln w=\"9525\"><a:solidFill>{GREY}</a:solidFill></a:ln></cx:spPr></cx:majorGridlines>")
+                    format!("<cx:majorGridlines><cx:spPr><a:ln w=\"9525\"><a:solidFill>{grid}</a:solidFill></a:ln></cx:spPr></cx:majorGridlines>")
                 } else {
                     String::new()
                 }
@@ -365,12 +401,21 @@ pub fn write_chartex(wb: &Workbook, si: usize, ch: &Chart, names: &mut Vec<Strin
         LegendPos::Right => Some("r"),
     };
     if let Some(p) = pos {
-        let _ = write!(s, "<cx:legend pos=\"{p}\" align=\"ctr\" overlay=\"0\"/>");
+        match text_props("cx", paint.legend.as_deref()) {
+            tx if tx.is_empty() => {
+                let _ = write!(s, "<cx:legend pos=\"{p}\" align=\"ctr\" overlay=\"0\"/>");
+            }
+            tx => {
+                let _ = write!(s, "<cx:legend pos=\"{p}\" align=\"ctr\" overlay=\"0\">{tx}</cx:legend>");
+            }
+        }
     }
-    // A white chart area with a light border, like other charts.
+    // A white chart area with a light border, like other charts, unless the chart picked its own.
     let _ = write!(
         s,
-        "</cx:chart><cx:spPr><a:solidFill><a:schemeClr val=\"bg1\"/></a:solidFill><a:ln w=\"9525\"><a:solidFill>{GREY}</a:solidFill></a:ln></cx:spPr></cx:chartSpace>"
+        "</cx:chart><cx:spPr><a:solidFill>{}</a:solidFill><a:ln w=\"9525\"><a:solidFill>{}</a:solidFill></a:ln></cx:spPr></cx:chartSpace>",
+        paint.background.as_deref().unwrap_or("<a:schemeClr val=\"bg1\"/>"),
+        paint.border.as_deref().unwrap_or(GREY)
     );
     s
 }
